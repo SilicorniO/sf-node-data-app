@@ -1,0 +1,77 @@
+# See http://help.github.com/ignore-files/ for more about ignoring files.
+
+# Compiled output
+/dist
+/build
+/out
+/bundle
+/input
+/output
+
+# Dependencies
+node_modules/
+/bower_components
+
+# Testing
+/coverage
+/test/reports
+/jest-cache
+.nyc_output
+
+# Logs
+logs*
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Temporary files
+*.tmp
+temp*
+/temp
+*~
+.cache
+.sass-cache
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.*
+!/.env.example
+
+# Optional files
+/public/uploads
+/storage
+/vendor
+/!.keep
+
+# IDE / Editor
+.idea
+.project
+*.suo
+*.workspace
+*.code-workspace
+*.swp
+*.bak
+*.tsbuildinfo
+/out
+/build
+
+# Node.js specific
+/build
+/out
+/dist
+npm-cache
+yarn-cache
+.nuxt
+.next
+/生成的

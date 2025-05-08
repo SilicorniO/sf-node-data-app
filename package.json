@@ -1,0 +1,25 @@
+{
+  "name": "sf-node-data-app",
+  "version": "1.0.0",
+  "description": "SFNode Data app",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node src/Index.ts --excelFile input/example.xlsx --includeFieldNames",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^22.15.16",
+    "@types/xlsx": "^0.0.35",
+    "@types/yargs": "^17.0.33",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "jsforce": "^3.8.1",
+    "xlsx": "^0.18.5"
+  }
+}
