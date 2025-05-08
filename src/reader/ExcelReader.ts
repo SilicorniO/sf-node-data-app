@@ -1,8 +1,8 @@
 import * as XLSX from 'xlsx';
 import * as path from 'path';
-import { DataSheet } from './model/DataSheet';
+import { DataSheet } from '../model/DataSheet';
 
-export class ExcelProcessor {
+export class ExcelReader {
   static async readExcelFile(filePath: string, includeFieldNames: boolean = false): Promise<{ [sheetName: string]: DataSheet }> {
     try {
       const workbook = XLSX.readFile(path.resolve(filePath));

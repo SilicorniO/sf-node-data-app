@@ -50,22 +50,3 @@ Aplicación node:
 RUN:
 
 npm start input/example.xlsx --includeFieldNames > output/result.txt
-
-{
-"importConf": {
-"bulkApiMaxWaitSec": 300,
-"bulkApiPollIntervalSec": 10
-},
-"objectsConf": [
-{
-"name": "",
-"sfObject": "",
-"fields": [
-{
-"api_name": "",
-"transformation": ""
-}
-]
-}
-]
-}
