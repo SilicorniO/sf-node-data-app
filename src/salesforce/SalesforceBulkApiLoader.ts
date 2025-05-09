@@ -66,7 +66,7 @@ export class SalesforceBulkApiLoader {
           object: objectConf.sfObject,
           operation: 'insert', // Operation is always insert
           contentType: 'CSV',
-          lineEnding: 'CRLF'
+          lineEnding: 'LF'
         }),
       });
 
@@ -84,8 +84,7 @@ export class SalesforceBulkApiLoader {
         url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}/batches`,
         headers: {
           'Content-Type': 'text/csv',
-          Accept: 'application/json',
-          'Content-Length': csvData.length.toString(),
+          Accept: 'application/json'
         },
         body: csvData,
       });
@@ -137,9 +136,9 @@ export class SalesforceBulkApiLoader {
       if (jobStatus.numberRecordsProcessed > 0) {
         const response: string = await conn.request({
           method: 'GET',
-          url: `/services/data/${API_VERSION}/jobs/bulk/${jobId}/successfulResults`,
+          url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}/successfulResults`,
           headers: {
-            'Accept': 'application/xml' // Specify that we want XML as the response
+            Accept: 'text/csv', // Ensure the response is returned as CSV
           }
         });
         const responseProcessed = CsvProcessor.parseCSV(response);
@@ -157,7 +156,7 @@ export class SalesforceBulkApiLoader {
       if (jobStatus.numberRecordsFailed > 0) {
         const response: string = await conn.request({
           method: 'GET',
-          url: `/services/data/${API_VERSION}/jobs/bulk/${jobId}/failedResults`,
+          url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}/failedResults`,
           headers: {
             'Accept': 'application/xml' // Specify that we want XML as the response
           }
