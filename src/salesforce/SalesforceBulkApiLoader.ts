@@ -2,8 +2,31 @@
 import * as jsforce from 'jsforce';
 import { Connection } from 'jsforce';
 import { DataSheet } from '../model/DataSheet';
+import { CsvProcessor } from '../processor/CsvProcessor'; // Import the CsvProcessor
+import { ObjectConf } from '../model/ObjectConf';
 
 const API_VERSION = 'v58.0'; // Define the API version constant
+
+// Define interfaces for the expected responses.
+// These interfaces should match the actual structure of the JSON responses from Salesforce.
+interface JobInfo {
+  id: string;
+  state: string;
+  numberRecordsProcessed: number;
+  numberRecordsFailed: number;
+}
+
+interface BatchInfo {
+  id: string;
+  state: string;
+  [key: string]: any;
+}
+
+interface JobResult {
+  success: any[];
+  failed: any[];
+  unprocessed: any[];
+}
 
 export class SalesforceBulkApiLoader {
   /**
@@ -15,15 +38,24 @@ export class SalesforceBulkApiLoader {
    */
   static async loadDataWithBulkAPI(
     conn: Connection,
-    objectName: string,
+    objectConf: ObjectConf,
     dataSheet: DataSheet,
   ): Promise<DataSheet> {
     try {
-      const timestamp = new Date().toISOString();
-      const jobName = `${timestamp}_${objectName}_insert_v2`; // Operation is always insert
+      // get the index of the unique field
+      const indexUniqueField = dataSheet.apiNames.findIndex(apiName => apiName == objectConf.uniqueFieldApiName);
+      if (indexUniqueField < 0) {
+        throw new Error(`The object ${objectConf.name} hasn't got a valid uniqueFieldApiName: '${objectConf.uniqueFieldApiName}'`);
+      }
+
+      //generate a map of data based on unique field
+      const dataMap = new Map<string, number>();
+      dataSheet.data.forEach((_row, index) => {
+        dataMap.set(dataSheet.data[index][indexUniqueField], index);
+      });
 
       // 1. Create Bulk API v2 job
-      const job = await conn.request({
+      const job: JobInfo = await conn.request({
         method: 'POST',
         url: `/services/data/${API_VERSION}/jobs/ingest`,
         headers: {
@@ -31,10 +63,10 @@ export class SalesforceBulkApiLoader {
           Accept: 'application/json',
         },
         body: JSON.stringify({
-          object: objectName,
+          object: objectConf.sfObject,
           operation: 'insert', // Operation is always insert
-          contentType: 'JSON',
-          jobName: jobName,
+          contentType: 'CSV',
+          lineEnding: 'CRLF'
         }),
       });
 
@@ -44,14 +76,7 @@ export class SalesforceBulkApiLoader {
       }
 
       // 2. Prepare and upload data
-      const records = dataSheet.data.map(row => {
-        const record: any = {};
-        dataSheet.fieldNames.forEach((fieldName, index) => {
-          record[fieldName] = row[index];
-        });
-        return record;
-      });
-      const csvData = SalesforceBulkApiLoader.toCSV(records); // Convert JSON to CSV
+      const csvData = CsvProcessor.generateCSV(dataSheet.apiNames, dataSheet.data);
 
       // Upload data in CSV format
       await conn.request({
@@ -78,8 +103,8 @@ export class SalesforceBulkApiLoader {
 
       // 4. Wait for the job to complete
       let jobCompleted = false;
-      let jobStatus: any;
-      while (!jobCompleted) {
+      let jobStatus: JobInfo;
+      do {
         jobStatus = await conn.request({
           method: 'GET',
           url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}`,
@@ -88,115 +113,70 @@ export class SalesforceBulkApiLoader {
           },
         });
         jobCompleted =
-          jobStatus.state === 'Completed' ||
+          jobStatus.state === 'JobComplete' ||
           jobStatus.state === 'Failed' ||
           jobStatus.state === 'Aborted';
         if (!jobCompleted) {
           await new Promise(resolve => setTimeout(resolve, 5000));
         }
+      } while (!jobCompleted);
+
+      // 5. Add identifier and errormessagecolumns to the DataSheet 
+      const indexColumnId = dataSheet.fieldNames.length;
+      dataSheet.fieldNames.push('sf__Id');
+      const indexcolumnErrorMessage = dataSheet.fieldNames.length;
+      dataSheet.fieldNames.push('ErrorMessage');
+      dataSheet.apiNames.push('');
+      dataSheet.apiNames.push('');
+      dataSheet.data.forEach((row, index) => {
+        row.push(''); // Placeholder for Id
+        row.push(''); // Placeholder for ErrorMessage
+      });
+
+      // get identifiers if records were processed
+      if (jobStatus.numberRecordsProcessed > 0) {
+        const response: string = await conn.request({
+          method: 'GET',
+          url: `/services/data/${API_VERSION}/jobs/bulk/${jobId}/successfulResults`,
+          headers: {
+            'Accept': 'application/xml' // Specify that we want XML as the response
+          }
+        });
+        const responseProcessed = CsvProcessor.parseCSV(response);
+        // for each processed row weinclude the identifier based on the unique defined field
+        responseProcessed.data.forEach((row, index) => {
+          const uniqueFieldValue = row[indexUniqueField + 2]; // Adjust index to get the unique field value
+          const dataRowIndex = dataMap.get(uniqueFieldValue);
+          if (dataRowIndex !== undefined) {
+            dataSheet.data[dataRowIndex][indexColumnId] = row[0]; // Set Id
+          }
+        });
       }
 
-      // 5. Get the job results and update the DataSheet
-      const results = await SalesforceBulkApiLoader.getJobResultsV2(conn, jobId);
-      dataSheet.fieldNames.push('id', 'error');
-      dataSheet.apiNames.push('', '');
-
-      // Update each row in dataSheet.data with the corresponding result
-      dataSheet.data.forEach((row: string[], index: number) => {
-        const successResult = results.success.find(r => r.rowId === (index + 1).toString());
-        const failedResult = results.failed.find(r => r.rowId === (index + 1).toString());
-
-        if (successResult) {
-          row.push(successResult.id, '');
-        } else if (failedResult) {
-          row.push('', failedResult.errors.join(', '));
-        } else {
-          row.push('', 'Record not processed');
-        }
-      });
+      // get error messages if records were failed
+      if (jobStatus.numberRecordsFailed > 0) {
+        const response: string = await conn.request({
+          method: 'GET',
+          url: `/services/data/${API_VERSION}/jobs/bulk/${jobId}/failedResults`,
+          headers: {
+            'Accept': 'application/xml' // Specify that we want XML as the response
+          }
+        });
+        const responseFailed = CsvProcessor.parseCSV(response);
+        // for each failed row we include the error message
+        responseFailed.data.forEach((row, index) => {
+          const uniqueFieldValue = row[indexUniqueField + 2]; // Adjust index to get the unique field value
+          const dataRowIndex = dataMap.get(uniqueFieldValue);
+          if (dataRowIndex !== undefined) {
+            dataSheet.data[dataRowIndex][indexcolumnErrorMessage] = row[0]; // Set ErrorMessage
+          }
+        });
+      }
       
       return dataSheet; // Return the modified DataSheet
     } catch (error: any) {
       throw new Error(`Error during Bulk API v2 operation: ${error.message}`);
     }
   }
-
-  /**
-   * Helper function to convert JSON array to CSV format.
-   * @param records Array of JSON objects.
-   * @returns CSV string.
-   */
-  private static toCSV(records: any[]): string {
-    if (!records || records.length === 0) {
-      return '';
-    }
-    const header = Object.keys(records[0]).join(',');
-    const rows = records.map(record => {
-      return Object.values(record).map(value => {
-        if (typeof value === 'string') {
-          return `"${value.replace(/"/g, '""')}"`;
-        }
-        return value;
-      }).join(',');
-    });
-    return `${header}\n${rows.join('\n')}`;
-  }
-
-  private static async getJobResultsV2(conn: Connection, jobId: string): Promise<any> {
-    const successResults: any[] = [];
-    const failedResults: any[] = [];
-    const unprocessedResults: any[] = [];
-
-    // Get batch IDs
-    const batchesResponse: any = await conn.request({
-      method: 'GET',
-      url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}/batches`,
-      headers: {
-        Accept: 'application/json',
-      },
-    });
-
-    if (batchesResponse && batchesResponse.records) {
-      for (const batch of batchesResponse.records) {
-        // Get batch results
-        if (batch.state === 'Completed' || batch.state === 'Failed') {
-          const batchSuccess: any[] = await SalesforceBulkApiLoader.fetchBatchResults(conn, `/services/data/${API_VERSION}/jobs/ingest/${jobId}/batches/${batch.id}/successfulResults`);
-          const batchFailed: any[] = await SalesforceBulkApiLoader.fetchBatchResults(conn, `/services/data/${API_VERSION}/jobs/ingest/${jobId}/batches/${batch.id}/failedResults`);
-          const batchUnprocessed: any[] = await SalesforceBulkApiLoader.fetchBatchResults(conn, `/services/data/v58.0/jobs/ingest/${jobId}/batches/${batch.id}/unprocessedRecords`);
-
-          successResults.push(...batchSuccess);
-          failedResults.push(...batchFailed);
-          unprocessedResults.push(...batchUnprocessed);
-        }
-      }
-    }
-    return { success: successResults, failed: failedResults, unprocessed: unprocessedResults };
-  }
-
-  private static async fetchBatchResults(conn: Connection, url: string): Promise<any[]> {
-    return new Promise<any[]>((resolve, reject) => {
-      const results: any[] = [];
-      conn.request({
-        method: 'GET',
-        url: url,
-        headers: {
-          Accept: 'application/json',
-        }
-      }).then((response: any) => {
-        if (Array.isArray(response)) {
-          results.push(...response);
-          resolve(results);
-        } else if (response) {
-          results.push(response);
-          resolve(results)
-        }
-        else {
-          resolve([]);
-        }
-
-      }).catch((err: any) => {
-        reject(new Error(`Failed to fetch batch results from ${url}: ${err.message}`));
-      });
-    });
-  }
 }
+

@@ -50,3 +50,19 @@ Aplicación node:
 RUN:
 
 npm start input/example.xlsx --includeFieldNames > output/result.txt
+
+---
+
+Now we are going to create another parameter called "import". It is not required.
+
+In case that we receive the import parameter we are going to execute the SalesforceLoader class.
+
+The SalesforceLoader class is moved to a folder called "loader".
+
+This class load the data contained in the excel file into the Salesforce Org.
+
+The way to do it is defined in the ExecConf read.
+
+It has to read each objectconf of the array objectsConf to import the object. If the object has not name or sfObject variables filled, it is dismissed.
+
+before importing the objects it has to check if we have authentication

@@ -44,9 +44,10 @@ export class ExecConfReader {
   private static parseObjectConf(objConfData: any): ObjectConf {
     const name = objConfData?.name ?? null;
     const sfObject = objConfData?.sfObject ?? null;
+    const uniqueFieldApiName = objConfData?.uniqueFieldApiName ?? null;
     const fieldsConf = objConfData?.fieldsConf ? this.parseFieldsConf(objConfData.fieldsConf) : [];
 
-    return new ObjectConf(name, sfObject, fieldsConf);
+    return new ObjectConf(name, sfObject, uniqueFieldApiName, fieldsConf);
   }
 
   private static parseFieldsConf(fieldsConfData: any[]): FieldConf[] {

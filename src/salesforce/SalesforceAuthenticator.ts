@@ -1,7 +1,7 @@
 // src/salesforce/SalesforceAuthenticator.ts
 import * as jsforce from 'jsforce';
 import { Connection } from 'jsforce';
-import * as dotenv from 'dotenv';
+import axios from 'axios'; // Import axios for HTTP requests
 
 export class SalesforceAuthenticator {
   private static clientId: string;
@@ -10,19 +10,11 @@ export class SalesforceAuthenticator {
 
   // Static method to set the authentication parameters.
   // This should be called once at the start of the application.
-  static setAuthParams(instanceUrl: string) {
-    // Load environment variables from .env file
-    dotenv.config();
-
-    // Directly fetch from environment variables
-    const clientId = process.env.SF_CLIENT_ID;
-    const clientSecret = process.env.SF_CLIENT_SECRET;
-
-    if (!clientId || !clientSecret) {
-      throw new Error(
-        'Client ID and Client Secret must be provided as environment variables (SF_CLIENT_ID, SF_CLIENT_SECRET).'
-      );
-    }
+  static setAuthParams(
+    clientId: string,
+    clientSecret: string,
+    instanceUrl: string
+  ) {
     SalesforceAuthenticator.clientId = clientId;
     SalesforceAuthenticator.clientSecret = clientSecret;
     SalesforceAuthenticator.instanceUrl = instanceUrl;
@@ -37,18 +29,25 @@ export class SalesforceAuthenticator {
     }
 
     try {
+      const tokenUrl = `${SalesforceAuthenticator.instanceUrl}/services/oauth2/token`;
+
+      // Make a POST request to get the access token
+      const response: any = await axios.post(tokenUrl, null, {
+        params: {
+          grant_type: 'client_credentials',
+          client_id: SalesforceAuthenticator.clientId,
+          client_secret: SalesforceAuthenticator.clientSecret,
+        },
+      });
+
+      const accessToken = response.data.access_token;
+
+      // Create a jsforce connection with the access token
       const conn = new jsforce.Connection({
-        clientId: SalesforceAuthenticator.clientId,
-        clientSecret: SalesforceAuthenticator.clientSecret,
         instanceUrl: SalesforceAuthenticator.instanceUrl,
+        accessToken: accessToken,
       });
 
-      // Use client credentials flow
-      const userInfo = await conn.authorize({
-        grant_type: 'client_credentials',
-      });
-
-      conn.accessToken = userInfo.access_token;
       return conn;
     } catch (error: any) {
       throw new Error(`Salesforce authentication failed: ${error.message}`);
