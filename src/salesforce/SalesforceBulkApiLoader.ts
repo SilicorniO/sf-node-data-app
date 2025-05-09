@@ -12,6 +12,7 @@ interface JobInfo {
   state: string;
   numberRecordsProcessed: number;
   numberRecordsFailed: number;
+  errorMessage: string;
 }
 
 export class SalesforceBulkApiLoader {
@@ -101,6 +102,11 @@ export class SalesforceBulkApiLoader {
           await new Promise((resolve) => setTimeout(resolve, 5000));
         }
       } while (!jobCompleted);
+
+      // checkif there was an error
+      if(jobStatus.state === 'Failed') {
+        throw new Error(`Bulk API v2 job failed for object ${objectConf.name}: ${jobStatus.errorMessage}`);
+      }
 
       // 5. Add identifier and error message columns to the DataSheet
       const indexColumnId = dataSheet.fieldNames.length;
