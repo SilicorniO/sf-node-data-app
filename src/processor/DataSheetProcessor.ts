@@ -56,7 +56,6 @@ export class DataSheetProcessor {
           const originalValue = row[fieldIndex];
           const transformedValue = this.applyTransformation(originalValue, fieldConf.transformation, sheetsData);
           row[fieldIndex] = transformedValue; // Replace the value with the transformed value
-          console.log(`Transformed value for field "${fieldConf.api_name}": "${originalValue}" -> "${transformedValue}"`);
         }
       }
     }

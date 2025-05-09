@@ -30,23 +30,11 @@ async function main() {
   const shouldImport = program.opts().import; // Get the value of the import option
 
   try {
+    // Read data
     const execConf = ExecConfReader.readConfFile(confFilePath);
-
     const sheetsData = await ExcelReader.readExcelFile(excelFilePath, includeFieldNames);
 
-    for (const sheetName in sheetsData) {
-      if (sheetsData.hasOwnProperty(sheetName)) {
-        const sheet: DataSheet = sheetsData[sheetName];
-        console.log(`Sheet Name: ${sheet.name}`);
-        console.log(`Field Names: ${sheet.fieldNames.join(', ')}`);
-        console.log(`API Names: ${sheet.apiNames.join(', ')}`);
-        console.log('Data:');
-        sheet.data.forEach(row => console.log(row));
-        console.log('\n');
-      }
-    }
-    console.log("Configuration", execConf);
-
+    
     // Conditionally import data to Salesforce
     if (shouldImport) {
       console.log('Import parameter is true. Starting Salesforce import...');
@@ -67,7 +55,7 @@ async function main() {
       );
       
     } else {
-      console.log('Import parameter is false. Transforming and generating Excel...');
+      console.log('Import parameter not found. Transforming and generating Excel...');
       const transformedSheetsData = DataSheetProcessor.processAllDataSheets(sheetsData, execConf.objectsConf);
 
       await ExcelGenerator.generateExcelFile(
