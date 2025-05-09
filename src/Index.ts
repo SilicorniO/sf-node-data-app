@@ -8,6 +8,7 @@ import { ExcelReader } from './reader/ExcelReader';
 import * as dotenv from 'dotenv';
 import { ExcelGenerator } from './reader/ExcelGenerator';
 import { DataSheetProcessor } from './processor/DataSheetProcessor';
+import { CsvReader } from './reader/CsvReader';
 
 
 async function main() {
@@ -16,11 +17,12 @@ async function main() {
 
   const program = new Command();
   program
-    .requiredOption('-e, --excelFile <path>', 'Path to the Excel file')
     .requiredOption('-c, --confFile <path>', 'Path to the JSON configuration file')
+    .option('-e, --excelFile <path>', 'Path to the Excel file')
     .option('-o, --outputFolder <path>', 'Path to the folder where output files will be created') // New parameter
     .option('-f, --includeFieldNames', 'Indicates that the Excel file has a header row with field names', false)
     .option('-i, --import', 'Indicates that the data should be imported to Salesforce', false) // Add the import option
+    .option('-v, --csvFiles <paths...>', 'Paths to the CSV files') // New parameter for CSV files
     .parse(process.argv);
 
   const excelFilePath = program.opts().excelFile;
@@ -28,13 +30,22 @@ async function main() {
   const outputFolder = program.opts().outputFolder || './'; // Default to current directory if not provided
   const includeFieldNames = program.opts().includeFieldNames;
   const shouldImport = program.opts().import; // Get the value of the import option
+  const csvFiles = program.opts().csvFiles || []; // Get the CSV file paths
 
   try {
     // Read data
     const execConf = ExecConfReader.readConfFile(confFilePath);
-    const sheetsData = await ExcelReader.readExcelFile(excelFilePath, includeFieldNames);
 
-    
+    let sheetsData: {[sheetName: string]: DataSheet} = {} 
+    if (excelFilePath != null) {
+      sheetsData = {...sheetsData, ...await ExcelReader.readExcelFile(excelFilePath, includeFieldNames)};
+    }
+    if (csvFiles.length > 0) {
+      // Read CSV files
+      const csvData = await CsvReader.readCsvFiles(csvFiles);
+      sheetsData = {...sheetsData, ...csvData}; // Merge CSV data with existing data
+    }
+
     // Conditionally import data to Salesforce
     if (shouldImport) {
       console.log('Import parameter is true. Starting Salesforce import...');

@@ -27,12 +27,10 @@ export class ExcelGenerator {
           // Add field names as the first row if includeFieldNames is true
           if (includeFieldNames) {
             worksheetData.push(dataSheet.fieldNames);
-
-            // Add API names as the second row if they are different from field names
-            if (dataSheet.apiNames.some((apiName, index) => apiName !== dataSheet.fieldNames[index])) {
-              worksheetData.push(dataSheet.apiNames);
-            }
           }
+
+          // Add API names
+          worksheetData.push(dataSheet.apiNames);
 
           // Add the data rows
           worksheetData.push(...dataSheet.data);
