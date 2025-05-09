@@ -1,8 +1,6 @@
-// src/salesforce/SalesforceBulkApiLoader.ts
-import * as jsforce from 'jsforce';
-import { Connection } from 'jsforce';
+import axios from 'axios';
 import { DataSheet } from '../model/DataSheet';
-import { CsvProcessor } from '../processor/CsvProcessor'; // Import the CsvProcessor
+import { CsvProcessor } from '../processor/CsvProcessor';
 import { ObjectConf } from '../model/ObjectConf';
 
 const API_VERSION = 'v58.0'; // Define the API version constant
@@ -16,61 +14,60 @@ interface JobInfo {
   numberRecordsFailed: number;
 }
 
-interface BatchInfo {
-  id: string;
-  state: string;
-  [key: string]: any;
-}
-
-interface JobResult {
-  success: any[];
-  failed: any[];
-  unprocessed: any[];
-}
-
 export class SalesforceBulkApiLoader {
+
   /**
-   * Loads data into Salesforce using Bulk API v2, from start to finish, and modifies the DataSheet with results.
-   * @param conn The Salesforce connection object.
-   * @param objectName The name of the Salesforce object to load data into.
+   * Initializes the Axios instance with the Salesforce connection details.
+   * @param instanceUrl The Salesforce instance URL.
+   * @param accessToken The Salesforce access token.
+   */
+  static getAxiosInstance(instanceUrl: string, accessToken: string) {
+    return axios.create({
+      baseURL: `${instanceUrl}/services/data/${API_VERSION}`,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  /**
+   * Loads data into Salesforce using Bulk API v2 and modifies the DataSheet with results.
+   * @param instanceUrl The Salesforce instance URL.
+   * @param accessToken The Salesforce access token.
+   * @param objectConf The configuration for the Salesforce object.
    * @param dataSheet The DataSheet object to load data from and modify with results.
    * @returns A promise that resolves to the modified DataSheet object.
    */
-  static async loadDataWithBulkAPI(
-    conn: Connection,
-    objectConf: ObjectConf,
-    dataSheet: DataSheet,
-  ): Promise<DataSheet> {
+  static async loadDataWithBulkAPI(instanceUrl: string, accessToken: string, objectConf: ObjectConf, dataSheet: DataSheet): Promise<DataSheet> {
     try {
-      // get the index of the unique field
-      const indexUniqueField = dataSheet.apiNames.findIndex(apiName => apiName == objectConf.uniqueFieldApiName);
+      const axiosInstance: Axios.AxiosInstance = this.getAxiosInstance(instanceUrl, accessToken);
+
+      // Get the index of the unique field
+      const indexUniqueField = dataSheet.apiNames.findIndex(
+        (apiName) => apiName === objectConf.uniqueFieldApiName,
+      );
       if (indexUniqueField < 0) {
-        throw new Error(`The object ${objectConf.name} hasn't got a valid uniqueFieldApiName: '${objectConf.uniqueFieldApiName}'`);
+        throw new Error(
+          `The object ${objectConf.name} doesn't have a valid uniqueFieldApiName: '${objectConf.uniqueFieldApiName}'`,
+        );
       }
 
-      //generate a map of data based on unique field
+      // Generate a map of data based on the unique field
       const dataMap = new Map<string, number>();
       dataSheet.data.forEach((_row, index) => {
         dataMap.set(dataSheet.data[index][indexUniqueField], index);
       });
 
       // 1. Create Bulk API v2 job
-      const job: JobInfo = await conn.request({
-        method: 'POST',
-        url: `/services/data/${API_VERSION}/jobs/ingest`,
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          object: objectConf.sfObject,
-          operation: 'insert', // Operation is always insert
-          contentType: 'CSV',
-          lineEnding: 'LF'
-        }),
+      const jobResponse = await axiosInstance.post('/jobs/ingest', {
+        object: objectConf.sfObject,
+        operation: 'insert', // Operation is always insert
+        contentType: 'CSV',
+        lineEnding: 'LF',
       });
 
-      const jobId = job.id;
+      const jobId = (jobResponse.data as JobInfo).id;
       if (!jobId) {
         throw new Error('Failed to create Bulk API v2 job: Job ID is missing.');
       }
@@ -79,71 +76,52 @@ export class SalesforceBulkApiLoader {
       const csvData = CsvProcessor.generateCSV(dataSheet.apiNames, dataSheet.data);
 
       // Upload data in CSV format
-      await conn.request({
-        method: 'PUT',
-        url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}/batches`,
+      await axiosInstance.put(`/jobs/ingest/${jobId}/batches`, csvData, {
         headers: {
           'Content-Type': 'text/csv',
-          Accept: 'application/json'
         },
-        body: csvData,
       });
 
       // 3. Close the job
-      await conn.request({
-        method: 'PATCH',
-        url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}`,
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ state: 'UploadComplete' }),
+      await axiosInstance.patch(`/jobs/ingest/${jobId}`, {
+        state: 'UploadComplete',
       });
 
       // 4. Wait for the job to complete
       let jobCompleted = false;
-      let jobStatus: JobInfo;
+      let jobStatus;
       do {
-        jobStatus = await conn.request({
-          method: 'GET',
-          url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}`,
-          headers: {
-            Accept: 'application/json',
-          },
-        });
+        const statusResponse = await axiosInstance.get(`/jobs/ingest/${jobId}`);
+        jobStatus = statusResponse.data as JobInfo;
         jobCompleted =
           jobStatus.state === 'JobComplete' ||
           jobStatus.state === 'Failed' ||
           jobStatus.state === 'Aborted';
         if (!jobCompleted) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          await new Promise((resolve) => setTimeout(resolve, 5000));
         }
       } while (!jobCompleted);
 
-      // 5. Add identifier and errormessagecolumns to the DataSheet 
+      // 5. Add identifier and error message columns to the DataSheet
       const indexColumnId = dataSheet.fieldNames.length;
       dataSheet.fieldNames.push('sf__Id');
-      const indexcolumnErrorMessage = dataSheet.fieldNames.length;
+      const indexColumnErrorMessage = dataSheet.fieldNames.length;
       dataSheet.fieldNames.push('ErrorMessage');
       dataSheet.apiNames.push('');
       dataSheet.apiNames.push('');
-      dataSheet.data.forEach((row, index) => {
+      dataSheet.data.forEach((row) => {
         row.push(''); // Placeholder for Id
         row.push(''); // Placeholder for ErrorMessage
       });
 
-      // get identifiers if records were processed
+      // 6. Process successful results
       if (jobStatus.numberRecordsProcessed > 0) {
-        const response: string = await conn.request({
-          method: 'GET',
-          url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}/successfulResults`,
-          headers: {
-            Accept: 'text/csv', // Ensure the response is returned as CSV
-          }
-        });
-        const responseProcessed = CsvProcessor.parseCSV(response);
-        // for each processed row weinclude the identifier based on the unique defined field
-        responseProcessed.data.forEach((row, index) => {
+        const successfulResults = await axiosInstance.get(
+          `/jobs/ingest/${jobId}/successfulResults`,
+          { headers: { Accept: 'text/csv' } },
+        );
+        const responseProcessed = CsvProcessor.parseCSV(successfulResults.data as string);
+        responseProcessed.data.forEach((row) => {
           const uniqueFieldValue = row[indexUniqueField + 2]; // Adjust index to get the unique field value
           const dataRowIndex = dataMap.get(uniqueFieldValue);
           if (dataRowIndex !== undefined) {
@@ -152,30 +130,25 @@ export class SalesforceBulkApiLoader {
         });
       }
 
-      // get error messages if records were failed
+      // 7. Process failed results
       if (jobStatus.numberRecordsFailed > 0) {
-        const response: string = await conn.request({
-          method: 'GET',
-          url: `/services/data/${API_VERSION}/jobs/ingest/${jobId}/failedResults`,
-          headers: {
-            'Accept': 'application/xml' // Specify that we want XML as the response
-          }
-        });
-        const responseFailed = CsvProcessor.parseCSV(response);
-        // for each failed row we include the error message
-        responseFailed.data.forEach((row, index) => {
+        const failedResults = await axiosInstance.get(
+          `/jobs/ingest/${jobId}/failedResults`,
+          { headers: { Accept: 'text/csv' } },
+        );
+        const responseFailed = CsvProcessor.parseCSV(failedResults.data as string);
+        responseFailed.data.forEach((row) => {
           const uniqueFieldValue = row[indexUniqueField + 2]; // Adjust index to get the unique field value
           const dataRowIndex = dataMap.get(uniqueFieldValue);
           if (dataRowIndex !== undefined) {
-            dataSheet.data[dataRowIndex][indexcolumnErrorMessage] = row[0]; // Set ErrorMessage
+            dataSheet.data[dataRowIndex][indexColumnErrorMessage] = row[0]; // Set ErrorMessage
           }
         });
       }
-      
+
       return dataSheet; // Return the modified DataSheet
     } catch (error: any) {
       throw new Error(`Error during Bulk API v2 operation: ${error.message}`);
     }
   }
 }
-

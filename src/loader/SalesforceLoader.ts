@@ -15,6 +15,9 @@ export class SalesforceLoader {
     try {
       // 1. Authenticate with Salesforce
       const conn = await SalesforceAuthenticator.authenticate();
+      if (!conn || ! conn.accessToken) {
+        throw new Error('Salesforce authentication failed. No connection object returned.');
+      }
 
       // 2. Iterate through ObjectConf and load data for each sheet
       const updatedSheetsData: { [sheetName: string]: DataSheet } = {}; // To store modified DataSheets
@@ -26,7 +29,7 @@ export class SalesforceLoader {
             console.log(`Loading data for sheet "${sheetName}" to Salesforce object "${objectConf.sfObject}"...`);
             try {
               // Load data using Bulk API v2
-              const updatedDataSheet = await SalesforceBulkApiLoader.loadDataWithBulkAPI(conn, objectConf, dataSheet);
+              const updatedDataSheet = await SalesforceBulkApiLoader.loadDataWithBulkAPI(conn.instanceUrl, conn.accessToken, objectConf, dataSheet);
                 updatedSheetsData[sheetName] = updatedDataSheet; // Store modified DataSheet
               console.log(`Data loading for sheet "${sheetName}" completed.`);
             } catch (error: any) {
