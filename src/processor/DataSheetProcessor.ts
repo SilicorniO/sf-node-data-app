@@ -11,8 +11,7 @@ export class DataSheetProcessor {
   static processAllDataSheets(
     sheetsData: { [sheetName: string]: DataSheet },
     objectsConf: ObjectConf[],
-  ): { [sheetName: string]: DataSheet } {
-    const transformedSheetsData: { [sheetName: string]: DataSheet } = {};
+  ): void {
 
     for (const objectConf of objectsConf) {
       const sheetName = objectConf.name;
@@ -20,13 +19,10 @@ export class DataSheetProcessor {
       if (dataSheet) {
         console.log(`Processing DataSheet: ${sheetName}`);
         this.processDataSheet(dataSheet, objectConf, sheetsData);
-        transformedSheetsData[sheetName] = dataSheet; // Store the modified DataSheet
       } else {
         console.warn(`DataSheet "${sheetName}" not found in sheetsData. Skipping.`);
       }
     }
-
-    return transformedSheetsData;
   }
   
   /**

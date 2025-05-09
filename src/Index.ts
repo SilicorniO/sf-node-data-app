@@ -6,9 +6,10 @@ import { SalesforceAuthenticator } from './salesforce/SalesforceAuthenticator'; 
 import { SalesforceLoader } from './loader/SalesforceLoader'; // Import the loader
 import { ExcelReader } from './reader/ExcelReader';
 import * as dotenv from 'dotenv';
-import { ExcelGenerator } from './reader/ExcelGenerator';
+import { ExcelGenerator } from './generator/ExcelGenerator';
 import { DataSheetProcessor } from './processor/DataSheetProcessor';
 import { CsvReader } from './reader/CsvReader';
+import { CsvGenerator } from './generator/CsvGenerator';
 
 
 async function main() {
@@ -36,15 +37,16 @@ async function main() {
     // Read data
     const execConf = ExecConfReader.readConfFile(confFilePath);
 
+    let excelSheetsData: {[sheetName: string]: DataSheet} = {} 
+    let csvSheetsData: {[sheetName: string]: DataSheet} = {} 
     let sheetsData: {[sheetName: string]: DataSheet} = {} 
     if (excelFilePath != null) {
-      sheetsData = {...sheetsData, ...await ExcelReader.readExcelFile(excelFilePath, includeFieldNames)};
+      excelSheetsData = {...sheetsData, ...await ExcelReader.readExcelFile(excelFilePath, includeFieldNames)};
     }
     if (csvFiles.length > 0) {
-      // Read CSV files
-      const csvData = await CsvReader.readCsvFiles(csvFiles);
-      sheetsData = {...sheetsData, ...csvData}; // Merge CSV data with existing data
+      csvSheetsData = await CsvReader.readCsvFiles(csvFiles);
     }
+    sheetsData = {...sheetsData, ...csvSheetsData}; // Merge CSV data with existing data
 
     // Conditionally import data to Salesforce
     if (shouldImport) {
@@ -56,25 +58,27 @@ async function main() {
           process.env.SF_INSTANCE_URL!
         );
 
-      await SalesforceLoader.loadData(execConf, sheetsData);
+      await SalesforceLoader.loadData(execConf, sheetsData);      
+    } else {
+      console.log('Import parameter not found. Transforming and generating Excel...');
+      DataSheetProcessor.processAllDataSheets(sheetsData, execConf.objectsConf);
+    }
 
-      //generate an excel file with the updated data
+    // generate excelfile
+    if (excelFilePath != null) {
       await ExcelGenerator.generateExcelFile(
-        sheetsData,
+        excelSheetsData,
         outputFolder + '/import_results.xlsx', // Specify the output file name
         includeFieldNames
       );
-      
-    } else {
-      console.log('Import parameter not found. Transforming and generating Excel...');
-      const transformedSheetsData = DataSheetProcessor.processAllDataSheets(sheetsData, execConf.objectsConf);
-
-      await ExcelGenerator.generateExcelFile(
-        transformedSheetsData,
-        outputFolder + '/transform_results.xlsx',
-        includeFieldNames
-      );
     }
+
+    // generate output csvs
+    try {
+      await CsvGenerator.generateCsvFiles(sheetsData, outputFolder);
+    } catch (error: any) {
+      console.error('Error:', error.message);
+    } 
 
   } catch (error) {
     console.error('Failed to process files:', error);
