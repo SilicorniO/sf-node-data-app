@@ -32,7 +32,8 @@ export class SalesforceLoader {
             console.log(`Loading data for sheet "${sheetName}" to Salesforce object "${objectConf.sfObject}"...`);
             try {
               // Load data using Bulk API v2
-              const updatedDataSheet = await SalesforceBulkApiLoader.loadDataWithBulkAPI(conn.instanceUrl, conn.accessToken, objectConf, dataSheet);
+              const apiBulkLoader = new SalesforceBulkApiLoader(execConf.importConf);
+              const updatedDataSheet = await apiBulkLoader.loadDataWithBulkAPI(conn.instanceUrl, conn.accessToken, objectConf, dataSheet);
               sheetsData[sheetName] = updatedDataSheet; // Store modified DataSheet
               console.log(`Data loading for sheet "${sheetName}" completed.`);
             } catch (error: any) {

@@ -1,12 +1,15 @@
 import axios from 'axios';
-import { DataSheet } from '../model/DataSheet';
+
 import { CsvProcessor } from '../processor/CsvProcessor';
 import { ObjectConf } from '../model/ObjectConf';
+import { ImportConf } from '../model/ImportConf';
+import { DataSheet } from '../model/DataSheet';
 
 const API_VERSION = 'v58.0'; // Define the API version constant
 const IMPORT_ID_LABEL = '_ImportId'; // Define the import ID label constant
 const ERROR_MESSAGE_LABEL = '_ErrorMessage'; // Define the error message label constant
 const CSV_LINE_ENDING = 'LF'; // Define the line ending for CSV files
+const MS_IN_SEC = 1000; // Define the milliseconds in a second constant
 
 // Define interfaces for the expected responses.
 // These interfaces should match the actual structure of the JSON responses from Salesforce.
@@ -19,13 +22,20 @@ interface JobInfo {
 }
 
 export class SalesforceBulkApiLoader {
+  // variables
+  importConf: ImportConf; // ImportConf object
+
+  // constructor with ImportConf
+  constructor(importConf: ImportConf) {
+    this.importConf = importConf;
+  }
 
   /**
    * Initializes the Axios instance with the Salesforce connection details.
    * @param instanceUrl The Salesforce instance URL.
    * @param accessToken The Salesforce access token.
    */
-  static getAxiosInstance(instanceUrl: string, accessToken: string) {
+  private getAxiosInstance(instanceUrl: string, accessToken: string) {
     return axios.create({
       baseURL: `${instanceUrl}/services/data/${API_VERSION}`,
       headers: {
@@ -43,7 +53,7 @@ export class SalesforceBulkApiLoader {
    * @param dataSheet The DataSheet object to load data from and modify with results.
    * @returns A promise that resolves to the modified DataSheet object.
    */
-  static async loadDataWithBulkAPI(instanceUrl: string, accessToken: string, objectConf: ObjectConf, dataSheet: DataSheet): Promise<DataSheet> {
+  public async loadDataWithBulkAPI(instanceUrl: string, accessToken: string, objectConf: ObjectConf, dataSheet: DataSheet): Promise<DataSheet> {
     try {
       const axiosInstance: Axios.AxiosInstance = this.getAxiosInstance(instanceUrl, accessToken);
 
@@ -94,8 +104,18 @@ export class SalesforceBulkApiLoader {
       // 4. Wait for the job to complete
       let jobCompleted = false;
       let jobStatus;
+      const startTime = Date.now(); // Record the start time
+
       do {
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        // Check if the total waiting time exceeds the maximum allowed time
+        const elapsedTimeSec = (Date.now() - startTime) / MS_IN_SEC;
+        if (elapsedTimeSec > this.importConf.bulkApiMaxWaitSec) {
+          throw new Error(
+            `Bulk API v2 job for object ${objectConf.name} exceeded the maximum wait time of ${this.importConf.bulkApiMaxWaitSec} seconds.`
+          );
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, this.importConf.bulkApiPollIntervalSec * MS_IN_SEC));
         const statusResponse = await axiosInstance.get(`/jobs/ingest/${jobId}`);
         jobStatus = statusResponse.data as JobInfo;
         jobCompleted =
