@@ -1,6 +1,6 @@
-// src/reader/ExecConfReader.ts
 import * as fs from 'fs';
 import * as path from 'path';
+import * as yaml from 'js-yaml'; // Import js-yaml for YAML parsing
 import { FieldConf } from '../model/FieldConf';
 import { ObjectConf } from '../model/ObjectConf';
 import { ImportConf } from '../model/ImportConf';
@@ -10,7 +10,7 @@ export class ExecConfReader {
   static readConfFile(confFilePath: string): ExecConf {
     try {
       const confFileContent = fs.readFileSync(path.resolve(confFilePath), 'utf8');
-      const confData = JSON.parse(confFileContent);
+      const confData: any = yaml.load(confFileContent); // Parse YAML instead of JSON
 
       // Construct ImportConf
       const importConf = this.parseImportConf(confData.importConf);
@@ -51,9 +51,9 @@ export class ExecConfReader {
   }
 
   private static parseFieldsConf(fieldsConfData: any[]): FieldConf[] {
-      if (!Array.isArray(fieldsConfData)) {
-          return [];
-      }
+    if (!Array.isArray(fieldsConfData)) {
+      return [];
+    }
     return fieldsConfData.map(fieldConfData => this.parseFieldConf(fieldConfData));
   }
 
