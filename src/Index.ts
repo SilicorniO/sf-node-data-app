@@ -7,6 +7,7 @@ import { SalesforceLoader } from './loader/SalesforceLoader'; // Import the load
 import { ExcelReader } from './reader/ExcelReader';
 import * as dotenv from 'dotenv';
 import { ExcelGenerator } from './reader/ExcelGenerator';
+import { DataSheetProcessor } from './processor/DataSheetProcessor';
 
 
 async function main() {
@@ -56,17 +57,24 @@ async function main() {
           process.env.SF_INSTANCE_URL!
         );
 
-      const updatedSheetsData = await SalesforceLoader.loadData(execConf, sheetsData);
+      await SalesforceLoader.loadData(execConf, sheetsData);
 
       //generate an excel file with the updated data
       await ExcelGenerator.generateExcelFile(
-        updatedSheetsData,
+        sheetsData,
         outputFolder + '/import_results.xlsx', // Specify the output file name
         includeFieldNames
       );
       
     } else {
-      console.log('Import parameter is false. Skipping Salesforce import.');
+      console.log('Import parameter is false. Transforming and generating Excel...');
+      const transformedSheetsData = DataSheetProcessor.processAllDataSheets(sheetsData, execConf.objectsConf);
+
+      await ExcelGenerator.generateExcelFile(
+        transformedSheetsData,
+        outputFolder + '/transform_results.xlsx',
+        includeFieldNames
+      );
     }
 
   } catch (error) {

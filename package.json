@@ -4,8 +4,8 @@
   "description": "SFNode Data app",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node src/Index.ts --excelFile input/example.xlsx --confFile input/conf.json --includeFieldNames --import --outputFolder output",
-    "debug": "node --inspect-brk -r ts-node/register src/Index.ts --excelFile input/example.xlsx --confFile input/conf.json --includeFieldNames --import --outputFolder output",
+    "start": "ts-node src/Index.ts --excelFile input/example.xlsx --confFile input/conf.json --includeFieldNames --outputFolder output --import",
+    "debug": "node --inspect-brk -r ts-node/register src/Index.ts --excelFile input/example.xlsx --confFile input/conf.json --includeFieldNames --outputFolder output --import",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -15,8 +15,8 @@
     "@types/axios": "^0.9.36",
     "@types/jsforce": "^1.11.5",
     "@types/node": "^22.15.16",
+    "@types/papaparse": "^5.3.16",
     "@types/xlsx": "^0.0.35",
-    "@types/yargs": "^17.0.33",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   },
@@ -25,6 +25,7 @@
     "commander": "^13.1.0",
     "dotenv": "^16.5.0",
     "jsforce": "^3.8.1",
+    "papaparse": "^5.5.2",
     "xlsx": "^0.18.5"
   }
 }

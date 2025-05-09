@@ -4,6 +4,9 @@ import { CsvProcessor } from '../processor/CsvProcessor';
 import { ObjectConf } from '../model/ObjectConf';
 
 const API_VERSION = 'v58.0'; // Define the API version constant
+const IMPORT_ID_LABEL = '_ImportId'; // Define the import ID label constant
+const ERROR_MESSAGE_LABEL = '_ErrorMessage'; // Define the error message label constant
+const CSV_LINE_ENDING = 'LF'; // Define the line ending for CSV files
 
 // Define interfaces for the expected responses.
 // These interfaces should match the actual structure of the JSON responses from Salesforce.
@@ -65,7 +68,7 @@ export class SalesforceBulkApiLoader {
         object: objectConf.sfObject,
         operation: 'insert', // Operation is always insert
         contentType: 'CSV',
-        lineEnding: 'LF',
+        lineEnding: CSV_LINE_ENDING,
       });
 
       const jobId = (jobResponse.data as JobInfo).id;
@@ -92,15 +95,13 @@ export class SalesforceBulkApiLoader {
       let jobCompleted = false;
       let jobStatus;
       do {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
         const statusResponse = await axiosInstance.get(`/jobs/ingest/${jobId}`);
         jobStatus = statusResponse.data as JobInfo;
         jobCompleted =
           jobStatus.state === 'JobComplete' ||
           jobStatus.state === 'Failed' ||
           jobStatus.state === 'Aborted';
-        if (!jobCompleted) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-        }
       } while (!jobCompleted);
 
       // checkif there was an error
@@ -110,11 +111,11 @@ export class SalesforceBulkApiLoader {
 
       // 5. Add identifier and error message columns to the DataSheet
       const indexColumnId = dataSheet.fieldNames.length;
-      dataSheet.fieldNames.push('sf__Id');
+      dataSheet.fieldNames.push(IMPORT_ID_LABEL);
+      dataSheet.apiNames.push(IMPORT_ID_LABEL);
       const indexColumnErrorMessage = dataSheet.fieldNames.length;
-      dataSheet.fieldNames.push('ErrorMessage');
-      dataSheet.apiNames.push('');
-      dataSheet.apiNames.push('');
+      dataSheet.fieldNames.push(ERROR_MESSAGE_LABEL);
+      dataSheet.apiNames.push(ERROR_MESSAGE_LABEL);
       dataSheet.data.forEach((row) => {
         row.push(''); // Placeholder for Id
         row.push(''); // Placeholder for ErrorMessage

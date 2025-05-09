@@ -1,42 +1,42 @@
-// src/processor/CsvProcessor.ts
+import * as Papa from 'papaparse';
+
 export class CsvProcessor {
-
+  /**
+   * Generates a CSV string from headers and data using PapaParse.
+   * @param headers The headers for the CSV file.
+   * @param data The data rows for the CSV file.
+   * @returns A CSV string.
+   */
   static generateCSV(headers: string[], data: string[][]): string {
-    // Join the headers with commas
-    const headerLine = headers.join(',');
+    // Combine headers and data into a single array
+    const csvData = [headers, ...data];
 
-    // Map each row of data to a CSV formatted string
-    const dataLines = data.map(row => {
-      return row.map(value => {
-        // Escape double quotes in the value
-        if (typeof value === 'string') {
-          return `"${value.replace(/"/g, '""')}"`;
-        }
-        return value;
-      }).join(',');
+    // Use PapaParse to generate the CSV string
+    return Papa.unparse(csvData, {
+      quotes: false, // Always quote fields
+      delimiter: ',', // Use comma as the delimiter
+      newline: '\n', // Use newline as the line ending
     });
-
-    // Combine the header and data lines into a single CSV string
-    return `${headerLine}\n${dataLines.join('\n')}`;
   }
 
-  static parseCSV(csvString: string): { headers: string[], data: string[][] } {
-    // Split the CSV string into lines
-    const lines = csvString.trim().split('\n');
-
-    // Extract headers from the first line
-    const headers = lines[0].split(',');
-
-    // Extract data from the remaining lines
-    const data = lines.slice(1).map(line => {
-      return line.split(',').map(value => {
-        // Remove surrounding quotes and unescape double quotes
-        if (value.startsWith('"') && value.endsWith('"')) {
-          return value.slice(1, -1).replace(/""/g, '"');
-        }
-        return value;
-      });
+  /**
+   * Parses a CSV string into headers and data using PapaParse.
+   * @param csvString The CSV string to parse.
+   * @returns An object containing headers and data.
+   */
+  static parseCSV(csvString: string): { headers: string[]; data: string[][] } {
+    // Use PapaParse to parse the CSV string
+    const result = Papa.parse<string[]>(csvString, {
+      header: false, // Do not treat the first row as headers
+      skipEmptyLines: true, // Skip empty lines
     });
+
+    if (result.errors.length > 0) {
+      throw new Error(`Error parsing CSV: ${result.errors.map(e => e.message).join(', ')}`);
+    }
+
+    // Extract headers and data
+    const [headers, ...data] = result.data;
 
     return { headers, data };
   }
