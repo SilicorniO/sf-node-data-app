@@ -6,6 +6,7 @@ import { SalesforceAuthenticator } from './salesforce/SalesforceAuthenticator'; 
 import { SalesforceLoader } from './loader/SalesforceLoader'; // Import the loader
 import { ExcelReader } from './reader/ExcelReader';
 import * as dotenv from 'dotenv';
+import { ExcelGenerator } from './reader/ExcelGenerator';
 
 
 async function main() {
@@ -16,12 +17,14 @@ async function main() {
   program
     .requiredOption('-e, --excelFile <path>', 'Path to the Excel file')
     .requiredOption('-c, --confFile <path>', 'Path to the JSON configuration file')
+    .option('-o, --outputFolder <path>', 'Path to the folder where output files will be created') // New parameter
     .option('-f, --includeFieldNames', 'Indicates that the Excel file has a header row with field names', false)
     .option('-i, --import', 'Indicates that the data should be imported to Salesforce', false) // Add the import option
     .parse(process.argv);
 
   const excelFilePath = program.opts().excelFile;
   const confFilePath = program.opts().confFile;
+  const outputFolder = program.opts().outputFolder || './'; // Default to current directory if not provided
   const includeFieldNames = program.opts().includeFieldNames;
   const shouldImport = program.opts().import; // Get the value of the import option
 
@@ -54,7 +57,14 @@ async function main() {
         );
 
       const updatedSheetsData = await SalesforceLoader.loadData(execConf, sheetsData);
-      console.log("updatedSheetData", updatedSheetsData);
+
+      //generate an excel file with the updated data
+      await ExcelGenerator.generateExcelFile(
+        updatedSheetsData,
+        outputFolder + '/import_results.xlsx', // Specify the output file name
+        includeFieldNames
+      );
+      
     } else {
       console.log('Import parameter is false. Skipping Salesforce import.');
     }

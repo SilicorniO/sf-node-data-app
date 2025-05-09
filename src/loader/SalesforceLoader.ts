@@ -30,7 +30,7 @@ export class SalesforceLoader {
             try {
               // Load data using Bulk API v2
               const updatedDataSheet = await SalesforceBulkApiLoader.loadDataWithBulkAPI(conn.instanceUrl, conn.accessToken, objectConf, dataSheet);
-                updatedSheetsData[sheetName] = updatedDataSheet; // Store modified DataSheet
+              updatedSheetsData[sheetName] = updatedDataSheet; // Store modified DataSheet
               console.log(`Data loading for sheet "${sheetName}" completed.`);
             } catch (error: any) {
               console.error(`Error loading data for sheet "${sheetName}":`, error);

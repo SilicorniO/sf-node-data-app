@@ -4,8 +4,8 @@
   "description": "SFNode Data app",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node src/Index.ts --excelFile input/example.xlsx --confFile input/conf.json --includeFieldNames --import",
-    "debug": "node --inspect-brk -r ts-node/register src/Index.ts --excelFile input/example.xlsx --confFile input/conf.json --includeFieldNames --import",
+    "start": "ts-node src/Index.ts --excelFile input/example.xlsx --confFile input/conf.json --includeFieldNames --import --outputFolder output",
+    "debug": "node --inspect-brk -r ts-node/register src/Index.ts --excelFile input/example.xlsx --confFile input/conf.json --includeFieldNames --import --outputFolder output",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
