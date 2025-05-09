@@ -148,7 +148,7 @@ export class SalesforceBulkApiLoader {
           const uniqueFieldValue = row[indexUniqueField + 2]; // Adjust index to get the unique field value
           const dataRowIndex = dataMap.get(uniqueFieldValue);
           if (dataRowIndex !== undefined) {
-            dataSheet.data[dataRowIndex][indexColumnErrorMessage] = row[0]; // Set ErrorMessage
+            dataSheet.data[dataRowIndex][indexColumnErrorMessage] = row[1]; // Set ErrorMessage
           }
         });
       }
