@@ -18,7 +18,7 @@ export class DataSheetProcessor {
     const fieldTransformations = transformAction.fieldsConf
       .filter((fieldConf) => fieldConf.transformation && fieldConf.transformation.trim() !== '')
       .map((fieldConf) => ({
-        fieldIndex: dataSheet.apiNames.indexOf(fieldConf.fieldName),
+        fieldIndex: dataSheet.columnNames.indexOf(fieldConf.fieldName),
         transformation: this.compileTransformation(fieldConf.transformation, sheetsData),
         fieldConf,
       }))
@@ -65,8 +65,8 @@ export class DataSheetProcessor {
         throw new Error(`Sheet "${sheetName}" not found in sheetsData.`);
       }
 
-      const apiNameIndex = targetSheet.apiNames.indexOf(apiName);
-      const targetColumnIndex = targetSheet.apiNames.indexOf(targetColumn);
+      const apiNameIndex = targetSheet.columnNames.indexOf(apiName);
+      const targetColumnIndex = targetSheet.columnNames.indexOf(targetColumn);
 
       if (apiNameIndex === -1 || targetColumnIndex === -1) {
         throw new Error(`Invalid column references in variable: ${match}`);

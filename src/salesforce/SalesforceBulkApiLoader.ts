@@ -58,7 +58,7 @@ export class SalesforceBulkApiLoader {
       const axiosInstance: Axios.AxiosInstance = this.getAxiosInstance(instanceUrl, accessToken);
 
       // Get the index of the unique field
-      const indexUniqueField = dataSheet.apiNames.findIndex(
+      const indexUniqueField = dataSheet.columnNames.findIndex(
         (apiName) => apiName === importAction.uniqueFieldName,
       );
       if (indexUniqueField < 0) {
@@ -87,7 +87,7 @@ export class SalesforceBulkApiLoader {
       }
 
       // 2. Prepare and upload data
-      const csvData = CsvProcessor.generateCSV(dataSheet.apiNames, dataSheet.data);
+      const csvData = CsvProcessor.generateCSV(dataSheet.columnNames, dataSheet.data);
 
       // Upload data in CSV format
       await axiosInstance.put(`/jobs/ingest/${jobId}/batches`, csvData, {
@@ -130,12 +130,12 @@ export class SalesforceBulkApiLoader {
       }
 
       // 5. Add identifier and error message columns to the DataSheet
-      const indexColumnId = dataSheet.fieldNames.length;
-      dataSheet.fieldNames.push(IMPORT_ID_LABEL);
-      dataSheet.apiNames.push(IMPORT_ID_LABEL);
-      const indexColumnErrorMessage = dataSheet.fieldNames.length;
-      dataSheet.fieldNames.push(ERROR_MESSAGE_LABEL);
-      dataSheet.apiNames.push(ERROR_MESSAGE_LABEL);
+      const indexColumnId = dataSheet.headerNames.length;
+      dataSheet.headerNames.push(IMPORT_ID_LABEL);
+      dataSheet.columnNames.push(IMPORT_ID_LABEL);
+      const indexColumnErrorMessage = dataSheet.headerNames.length;
+      dataSheet.headerNames.push(ERROR_MESSAGE_LABEL);
+      dataSheet.columnNames.push(ERROR_MESSAGE_LABEL);
       dataSheet.data.forEach((row) => {
         row.push(''); // Placeholder for Id
         row.push(''); // Placeholder for ErrorMessage

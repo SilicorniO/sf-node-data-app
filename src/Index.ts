@@ -20,14 +20,14 @@ async function main() {
     .requiredOption('-c, --confFile <path>', 'Path to the JSON configuration file')
     .option('-e, --excelFile <path>', 'Path to the Excel file')
     .option('-o, --outputFolder <path>', 'Path to the folder where output files will be created') // New parameter
-    .option('-f, --includeFieldNames', 'Indicates that the Excel file has a header row with field names', false)
+    .option('-h, --includeHeaderNames', 'Indicates that the Excel file has a header row with field names', false)
     .option('-v, --csvFiles <paths...>', 'Paths to the CSV files') // New parameter for CSV files
     .parse(process.argv);
 
   const excelFilePath = program.opts().excelFile;
   const confFilePath = program.opts().confFile;
   const outputFolder = program.opts().outputFolder || './'; // Default to current directory if not provided
-  const includeFieldNames = program.opts().includeFieldNames;
+  const includeHeaderNames = program.opts().includeHeaderNames;
   const csvFiles = program.opts().csvFiles || []; // Get the CSV file paths
 
   try {
@@ -38,12 +38,12 @@ async function main() {
     let csvSheetsData: {[sheetName: string]: DataSheet} = {} 
     let sheetsData: {[sheetName: string]: DataSheet} = {} 
     if (excelFilePath != null) {
-      excelSheetsData = {...sheetsData, ...await ExcelReader.readExcelFile(excelFilePath, includeFieldNames)};
+      excelSheetsData = {...sheetsData, ...await ExcelReader.readExcelFile(excelFilePath, includeHeaderNames)};
     }
     if (csvFiles.length > 0) {
       csvSheetsData = await CsvReader.readCsvFiles(csvFiles);
     }
-    sheetsData = {...sheetsData, ...csvSheetsData}; // Merge CSV data with existing data
+    sheetsData = {...excelSheetsData, ...csvSheetsData}; // Merge CSV data with existing data
 
     // Set Salesforce authentication parameters
     SalesforceAuthenticator.setAuthParams(
@@ -60,7 +60,7 @@ async function main() {
       await ExcelGenerator.generateExcelFile(
         excelSheetsData,
         outputFolder + '/import_results.xlsx', // Specify the output file name
-        includeFieldNames
+        includeHeaderNames
       );
     }
 

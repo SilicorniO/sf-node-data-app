@@ -8,7 +8,6 @@ export class CsvGenerator {
    * Generates CSV files for each DataSheet in the provided sheetsData dictionary.
    * @param sheetsData A dictionary where the key is the sheet name and the value is the DataSheet object.
    * @param outputFolder The folder where the CSV files will be saved.
-   * @param includeFieldNames Whether to include field names as the first row in the CSV files.
    */
   static async generateCsvFiles(
     sheetsData: { [sheetName: string]: DataSheet },
@@ -26,7 +25,7 @@ export class CsvGenerator {
           const dataSheet = sheetsData[sheetName];
 
           // Prepare the headers and data for the CSV
-          const csvContent = CsvProcessor.generateCSV(dataSheet.apiNames, dataSheet.data);
+          const csvContent = CsvProcessor.generateCSV(dataSheet.columnNames, dataSheet.data);
 
           // Define the output file path
           const outputFilePath = path.join(outputFolder, `${sheetName}_output.csv`);

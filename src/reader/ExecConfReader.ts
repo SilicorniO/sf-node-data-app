@@ -53,7 +53,7 @@ export class ExecConfReader {
 
     let importAction: ImportAction | undefined = undefined;
     // sfObject is now importName inside importAction
-    if (actionData?.importAction?.uniqueFieldName || actionData?.importAction?.importName || actionData?.sfObject) {
+    if (actionData?.importAction?.uniqueFieldName || actionData?.importAction?.importName) {
       // Support both new and legacy config
       const importName = actionData?.importAction?.importName ?? actionData?.sfObject ?? null;
       const uniqueFieldName = actionData?.importAction?.uniqueFieldName ?? null;

@@ -8,6 +8,8 @@ export class SalesforceAuthenticator {
   private static clientSecret: string;
   private static instanceUrl: string;
 
+  private static actualConnection: jsforce.Connection;
+
   // Static method to set the authentication parameters.
   // This should be called once at the start of the application.
   static setAuthParams(
@@ -28,6 +30,11 @@ export class SalesforceAuthenticator {
       );
     }
 
+    // If there is an existing connection, return it
+    if (SalesforceAuthenticator.actualConnection) {
+      return SalesforceAuthenticator.actualConnection;
+    }
+
     try {
       const tokenUrl = `${SalesforceAuthenticator.instanceUrl}/services/oauth2/token`;
 
@@ -43,12 +50,12 @@ export class SalesforceAuthenticator {
       const accessToken = response.data.access_token;
 
       // Create a jsforce connection with the access token
-      const conn = new jsforce.Connection({
+      SalesforceAuthenticator.actualConnection = new jsforce.Connection({
         instanceUrl: SalesforceAuthenticator.instanceUrl,
         accessToken: accessToken,
       });
 
-      return conn;
+      return SalesforceAuthenticator.actualConnection;
     } catch (error: any) {
       throw new Error(`Salesforce authentication failed: ${error.message}`);
     }

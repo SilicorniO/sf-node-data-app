@@ -2,7 +2,7 @@
 
 export interface DataSheet {
   name: string;
-  fieldNames: string[];
-  apiNames: string[];
+  headerNames: string[];
+  columnNames: string[];
   data: string[][];
 }

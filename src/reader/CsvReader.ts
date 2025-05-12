@@ -7,7 +7,6 @@ export class CsvReader {
   /**
    * Reads multiple CSV files and returns a dictionary of DataSheet objects.
    * @param csvFilePaths An array of paths to the CSV files.
-   * @param includeFieldNames Whether to include field names as the first row.
    * @returns A promise that resolves to a dictionary of DataSheet objects.
    */
   static async readCsvFiles(csvFilePaths: string[]): Promise<{ [sheetName: string]: DataSheet }> {
@@ -25,7 +24,6 @@ export class CsvReader {
   /**
    * Reads a single CSV file and returns a DataSheet object.
    * @param filePath The path to the CSV file.
-   * @param includeFieldNames Whether to include field names as the first row.
    * @returns A promise that resolves to a DataSheet object.
    */
   private static async readCsvFile(filePath: string): Promise<DataSheet> {
@@ -38,14 +36,12 @@ export class CsvReader {
         try {
           const { headers, data } = CsvProcessor.parseCSV(csvString);
 
-          // Handle field names and API names based on includeFieldNames
-          const fieldNames = [...headers];
-          const apiNames = [...headers];
+          const headerNames = [...headers];
 
           resolve({
             name: path.basename(filePath, path.extname(filePath)),
-            fieldNames: fieldNames,
-            apiNames: apiNames,
+            columnNames: headerNames,
+            headerNames: [...headers],
             data: data,
           });
         } catch (error: any) {
