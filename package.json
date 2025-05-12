@@ -4,10 +4,11 @@
   "description": "SFNode Data app",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node src/Index.ts -e input/example.xlsx -c input/conf_transform.yaml -o output --includeFieldNames",
-    "start-import": "ts-node src/Index.ts -e input/example.xlsx -c input/conf_import.yaml -o output --import --includeFieldNames",
+    "start": "ts-node src/Index.ts -e input/example.xlsx -c input/conf_transform.yaml -o output --includeHeaderNames",
+    "start-import": "ts-node src/Index.ts -e input/example.xlsx -c input/conf_import.yaml -o output --includeHeaderNames",
     "start-csv": "ts-node src/Index.ts --csvFiles input/data.csv -c input/conf_csv.yaml -o output",
-    "debug": "node --inspect-brk -r ts-node/register src/Index.ts -e input/example.xlsx -c input/yaml.json -o output --import --includeFieldNames",
+    "start-csv-big": "ts-node src/Index.ts --csvFiles input/data_big.csv -c input/conf_csv_big.yaml -o output",
+    "debug": "node --inspect-brk -r ts-node/register src/Index.ts -e input/example.xlsx -c input/conf_import.yaml -o output --includeHeaderNames",
     "debug-csv": "node --inspect-brk -r ts-node/register src/Index.ts --csvFiles input/data.csv -c input/conf_csv.yaml -o output",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
