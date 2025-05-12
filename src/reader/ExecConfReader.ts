@@ -31,8 +31,10 @@ export class ExecConfReader {
   private static parseImportConf(importConfData: any): ImportConf {
     const bulkApiMaxWaitSec = importConfData?.bulkApiMaxWaitSec ?? null;
     const bulkApiPollIntervalSec = importConfData?.bulkApiPollIntervalSec ?? null;
+    const stopOnError = importConfData?.stopOnError ?? false;
+    const rollbackOnError = importConfData?.rollbackOnError ?? false;
 
-    return new ImportConf(bulkApiMaxWaitSec, bulkApiPollIntervalSec);
+    return new ImportConf(bulkApiMaxWaitSec, bulkApiPollIntervalSec, stopOnError, rollbackOnError);
   }
 
   private static parseActions(actionsData: any[]): Action[] {
@@ -57,8 +59,9 @@ export class ExecConfReader {
       // Support both new and legacy config
       const importName = actionData?.importAction?.importName ?? actionData?.sfObject ?? null;
       const uniqueFieldName = actionData?.importAction?.uniqueFieldName ?? null;
+      const idFieldName = actionData?.importAction?.idFieldName ?? null;
       if (importName && uniqueFieldName) {
-        importAction = new ImportAction(importName, uniqueFieldName);
+        importAction = new ImportAction(importName, uniqueFieldName, idFieldName);
       }
     }
 
