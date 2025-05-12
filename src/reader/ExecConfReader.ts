@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as yaml from 'js-yaml'; // Import js-yaml for YAML parsing
+import * as yaml from 'js-yaml';
 import { FieldConf } from '../model/FieldConf';
-import { ObjectConf } from '../model/ObjectConf';
+import { Action } from '../model/Action';
+import { TransformAction } from '../model/TransformAction';
+import { ImportAction } from '../model/ImportAction';
 import { ImportConf } from '../model/ImportConf';
 import { ExecConf } from '../model/ExecConf';
 
@@ -10,16 +12,16 @@ export class ExecConfReader {
   static readConfFile(confFilePath: string): ExecConf {
     try {
       const confFileContent = fs.readFileSync(path.resolve(confFilePath), 'utf8');
-      const confData: any = yaml.load(confFileContent); // Parse YAML instead of JSON
+      const confData: any = yaml.load(confFileContent);
 
       // Construct ImportConf
       const importConf = this.parseImportConf(confData.importConf);
 
-      // Construct ObjectConf array
-      const objectsConf = this.parseObjectsConf(confData.objectsConf);
+      // Construct Action array
+      const actions = this.parseActions(confData.objectsConf || confData.actions);
 
       // Construct ExecConf
-      const execConf = new ExecConf(importConf, objectsConf);
+      const execConf = new ExecConf(importConf, actions);
       return execConf;
     } catch (error: any) {
       throw new Error(`Error reading or parsing configuration file: ${error.message}`);
@@ -33,21 +35,34 @@ export class ExecConfReader {
     return new ImportConf(bulkApiMaxWaitSec, bulkApiPollIntervalSec);
   }
 
-  private static parseObjectsConf(objectsConfData: any[]): ObjectConf[] {
-    if (!Array.isArray(objectsConfData)) {
-      return []; // Return empty array if objectsConfData is not an array
+  private static parseActions(actionsData: any[]): Action[] {
+    if (!Array.isArray(actionsData)) {
+      return [];
     }
-
-    return objectsConfData.map(objConfData => this.parseObjectConf(objConfData));
+    return actionsData.map(actionData => this.parseAction(actionData));
   }
 
-  private static parseObjectConf(objConfData: any): ObjectConf {
-    const name = objConfData?.name ?? null;
-    const sfObject = objConfData?.sfObject ?? null;
-    const uniqueFieldApiName = objConfData?.uniqueFieldApiName ?? null;
-    const fieldsConf = objConfData?.fieldsConf ? this.parseFieldsConf(objConfData.fieldsConf) : [];
+  private static parseAction(actionData: any): Action {
+    const name = actionData?.name ?? null;
 
-    return new ObjectConf(name, sfObject, uniqueFieldApiName, fieldsConf);
+    let transformAction: TransformAction | undefined = undefined;
+    if (actionData?.transformAction?.fieldsConf) {
+      const fieldsConf = this.parseFieldsConf(actionData.transformAction.fieldsConf);
+      transformAction = new TransformAction(fieldsConf);
+    }
+
+    let importAction: ImportAction | undefined = undefined;
+    // sfObject is now importName inside importAction
+    if (actionData?.importAction?.uniqueFieldName || actionData?.importAction?.importName || actionData?.sfObject) {
+      // Support both new and legacy config
+      const importName = actionData?.importAction?.importName ?? actionData?.sfObject ?? null;
+      const uniqueFieldName = actionData?.importAction?.uniqueFieldName ?? null;
+      if (importName && uniqueFieldName) {
+        importAction = new ImportAction(importName, uniqueFieldName);
+      }
+    }
+
+    return new Action(name, transformAction, importAction);
   }
 
   private static parseFieldsConf(fieldsConfData: any[]): FieldConf[] {
@@ -58,8 +73,8 @@ export class ExecConfReader {
   }
 
   private static parseFieldConf(fieldConfData: any): FieldConf {
-    const api_name = fieldConfData?.api_name ?? null;
+    const fieldName = fieldConfData?.fieldName ?? null;
     const transformation = fieldConfData?.transformation ?? null;
-    return new FieldConf(api_name, transformation);
+    return new FieldConf(fieldName, transformation);
   }
 }

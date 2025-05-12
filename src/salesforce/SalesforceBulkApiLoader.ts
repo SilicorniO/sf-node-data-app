@@ -1,9 +1,9 @@
 import axios from 'axios';
 
 import { CsvProcessor } from '../processor/CsvProcessor';
-import { ObjectConf } from '../model/ObjectConf';
 import { ImportConf } from '../model/ImportConf';
 import { DataSheet } from '../model/DataSheet';
+import { ImportAction } from '../model/ImportAction';
 
 const API_VERSION = 'v58.0'; // Define the API version constant
 const IMPORT_ID_LABEL = '_ImportId'; // Define the import ID label constant
@@ -49,21 +49,21 @@ export class SalesforceBulkApiLoader {
    * Loads data into Salesforce using Bulk API v2 and modifies the DataSheet with results.
    * @param instanceUrl The Salesforce instance URL.
    * @param accessToken The Salesforce access token.
-   * @param objectConf The configuration for the Salesforce object.
+   * @param importAction The configuration for the Salesforce object.
    * @param dataSheet The DataSheet object to load data from and modify with results.
    * @returns A promise that resolves to the modified DataSheet object.
    */
-  public async loadDataWithBulkAPI(instanceUrl: string, accessToken: string, objectConf: ObjectConf, dataSheet: DataSheet): Promise<DataSheet> {
+  public async loadDataWithBulkAPI(instanceUrl: string, accessToken: string, importAction: ImportAction, dataSheet: DataSheet): Promise<DataSheet> {
     try {
       const axiosInstance: Axios.AxiosInstance = this.getAxiosInstance(instanceUrl, accessToken);
 
       // Get the index of the unique field
       const indexUniqueField = dataSheet.apiNames.findIndex(
-        (apiName) => apiName === objectConf.uniqueFieldApiName,
+        (apiName) => apiName === importAction.uniqueFieldName,
       );
       if (indexUniqueField < 0) {
         throw new Error(
-          `The object ${objectConf.name} doesn't have a valid uniqueFieldApiName: '${objectConf.uniqueFieldApiName}'`,
+          `The object ${importAction.importName} doesn't have a valid uniqueFieldApiName: '${importAction.uniqueFieldName}'`,
         );
       }
 
@@ -75,7 +75,7 @@ export class SalesforceBulkApiLoader {
 
       // 1. Create Bulk API v2 job
       const jobResponse = await axiosInstance.post('/jobs/ingest', {
-        object: objectConf.sfObject,
+        object: importAction.importName,
         operation: 'insert', // Operation is always insert
         contentType: 'CSV',
         lineEnding: CSV_LINE_ENDING,
@@ -111,7 +111,7 @@ export class SalesforceBulkApiLoader {
         const elapsedTimeSec = (Date.now() - startTime) / MS_IN_SEC;
         if (elapsedTimeSec > this.importConf.bulkApiMaxWaitSec) {
           throw new Error(
-            `Bulk API v2 job for object ${objectConf.name} exceeded the maximum wait time of ${this.importConf.bulkApiMaxWaitSec} seconds.`
+            `Bulk API v2 job for object ${importAction.importName} exceeded the maximum wait time of ${this.importConf.bulkApiMaxWaitSec} seconds.`
           );
         }
 
@@ -126,7 +126,7 @@ export class SalesforceBulkApiLoader {
 
       // checkif there was an error
       if(jobStatus.state === 'Failed') {
-        throw new Error(`Bulk API v2 job failed for object ${objectConf.name}: ${jobStatus.errorMessage}`);
+        throw new Error(`Bulk API v2 job failed for object ${importAction.importName}: ${jobStatus.errorMessage}`);
       }
 
       // 5. Add identifier and error message columns to the DataSheet

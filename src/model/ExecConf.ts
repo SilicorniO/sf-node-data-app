@@ -1,11 +1,11 @@
 // src/model/ExecConf.ts
 import { ImportConf } from './ImportConf';
-import { ObjectConf } from './ObjectConf';
+import { Action } from './Action';
 export class ExecConf {
   importConf: ImportConf;
-  objectsConf: ObjectConf[];
-  constructor(importConf: ImportConf, objectsConf: ObjectConf[]) {
+  actions: Action[];
+  constructor(importConf: ImportConf, actions: Action[]) {
     this.importConf = importConf;
-    this.objectsConf = objectsConf;
+    this.actions = actions;
   }
 }

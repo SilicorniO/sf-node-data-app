@@ -1,46 +1,24 @@
 import { DataSheet } from '../model/DataSheet';
-import { ObjectConf } from '../model/ObjectConf';
+import { TransformAction } from '../model/TransformAction';
 
 export class DataSheetProcessor {
-
-  /**
-   * Processes all DataSheets by applying transformations defined in their corresponding ObjectConf.
-   * @param sheetsData A dictionary of all DataSheets being processed.
-   * @param objectsConf An array of ObjectConf objects defining the transformations for each DataSheet.
-   */
-  static processAllDataSheets(
-    sheetsData: { [sheetName: string]: DataSheet },
-    objectsConf: ObjectConf[],
-  ): void {
-
-    for (const objectConf of objectsConf) {
-      const sheetName = objectConf.name;
-      const dataSheet = sheetsData[sheetName];
-      if (dataSheet) {
-        console.log(`Processing DataSheet: ${sheetName}`);
-        this.processDataSheet(dataSheet, objectConf, sheetsData);
-      } else {
-        console.warn(`DataSheet "${sheetName}" not found in sheetsData. Skipping.`);
-      }
-    }
-  }
   
   /**
    * Processes a DataSheet by applying transformations defined in the ObjectConf.
    * @param dataSheet The DataSheet to process.
-   * @param objectConf The ObjectConf associated with the DataSheet.
+   * @param transformAction The transformation action to apply.
    * @param sheetsData A dictionary of all DataSheets being processed.
    */
   static processDataSheet(
     dataSheet: DataSheet,
-    objectConf: ObjectConf,
+    transformAction: TransformAction,
     sheetsData: { [sheetName: string]: DataSheet },
   ): void {
     // Precompute indices and transformations for better performance
-    const fieldTransformations = objectConf.fieldsConf
+    const fieldTransformations = transformAction.fieldsConf
       .filter((fieldConf) => fieldConf.transformation && fieldConf.transformation.trim() !== '')
       .map((fieldConf) => ({
-        fieldIndex: dataSheet.apiNames.indexOf(fieldConf.api_name),
+        fieldIndex: dataSheet.apiNames.indexOf(fieldConf.fieldName),
         transformation: this.compileTransformation(fieldConf.transformation, sheetsData),
         fieldConf,
       }))
