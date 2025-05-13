@@ -3,12 +3,15 @@ import * as jsforce from 'jsforce';
 import { Connection } from 'jsforce';
 import axios from 'axios'; // Import axios for HTTP requests
 
+const MS_IN_HOUR = 3600000; // 1 hour in milliseconds
+
 export class SalesforceAuthenticator {
   private static clientId: string;
   private static clientSecret: string;
   private static instanceUrl: string;
 
   private static actualConnection: jsforce.Connection;
+  private static tokenCreatedAt: number | null = null; // Store the timestamp when the token was generated
 
   // Static method to set the authentication parameters.
   // This should be called once at the start of the application.
@@ -30,8 +33,13 @@ export class SalesforceAuthenticator {
       );
     }
 
-    // If there is an existing connection, return it
-    if (SalesforceAuthenticator.actualConnection) {
+    // If there is an existing connection and the token is less than 1 hour old, return it
+    const now = Date.now();
+    if (
+      SalesforceAuthenticator.actualConnection &&
+      SalesforceAuthenticator.tokenCreatedAt &&
+      (now - SalesforceAuthenticator.tokenCreatedAt < MS_IN_HOUR)
+    ) {
       return SalesforceAuthenticator.actualConnection;
     }
 
@@ -54,6 +62,8 @@ export class SalesforceAuthenticator {
         instanceUrl: SalesforceAuthenticator.instanceUrl,
         accessToken: accessToken,
       });
+
+      SalesforceAuthenticator.tokenCreatedAt = Date.now(); // Save the time when the token was generated
 
       return SalesforceAuthenticator.actualConnection;
     } catch (error: any) {
