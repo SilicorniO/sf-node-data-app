@@ -107,7 +107,7 @@ private static generateRollbackActions(actions: Action[], index: number): Action
         'delete'
       );
       // Create a new Action with only the delete ImportAction
-      rollbackActions.push(new Action(original.name, undefined, deleteImportAction));
+      rollbackActions.push(new Action(original.name, 0, undefined, deleteImportAction));
     }
   }
   return rollbackActions;
