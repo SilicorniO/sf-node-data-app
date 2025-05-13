@@ -32,7 +32,6 @@ export class CsvGenerator {
 
           // Write the CSV content to the file
           fs.writeFileSync(outputFilePath, csvContent, 'utf8');
-          console.log(`CSV file successfully generated for sheet "${sheetName}" at: ${outputFilePath}`);
         }
       }
     } catch (error: any) {

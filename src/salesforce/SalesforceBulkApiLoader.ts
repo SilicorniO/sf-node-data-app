@@ -193,7 +193,7 @@ export class SalesforceBulkApiLoader {
     accessToken: string,
     importAction: ImportAction,
     dataSheet: DataSheet
-  ): Promise<DataSheet> {
+  ): Promise<Boolean> {
     try {
       const axiosInstance = this.getAxiosInstance(instanceUrl, accessToken);
 
@@ -214,13 +214,14 @@ export class SalesforceBulkApiLoader {
       });
 
       // Prepare only the Id column for deletion
-      const deleteHeaders = [importAction.idFieldName];
+      const deleteHeaders = ["Id"];
       const deleteData = dataSheet.data
         .map(row => [row[indexIdField]])
         .filter(idArr => idArr[0]); // Only rows with an Id
 
       if (deleteData.length === 0) {
-        throw new Error('No records with Id found to delete.');
+        console.log('No records with Id found to delete.');
+        return true; // returnOK
       }
 
       // 1. Create Bulk API v2 job for delete
@@ -297,7 +298,7 @@ export class SalesforceBulkApiLoader {
         });
       }
 
-      return dataSheet;
+      return jobStatus.numberRecordsFailed == 0;
     } catch (error: any) {
       throw new Error(`Error during Bulk API v2 delete operation: ${error.message}`);
     }

@@ -54,14 +54,19 @@ export class ExecConfReader {
     }
 
     let importAction: ImportAction | undefined = undefined;
-    // sfObject is now importName inside importAction
-    if (actionData?.importAction?.uniqueFieldName || actionData?.importAction?.importName) {
-      // Support both new and legacy config
-      const importName = actionData?.importAction?.importName ?? actionData?.sfObject ?? null;
-      const uniqueFieldName = actionData?.importAction?.uniqueFieldName ?? null;
-      const idFieldName = actionData?.importAction?.idFieldName ?? null;
-      if (importName && uniqueFieldName) {
-        importAction = new ImportAction(importName, uniqueFieldName, idFieldName);
+    // Parse all fields as defined in ImportAction model
+    if (
+      actionData?.importAction?.importName ||
+      actionData?.importAction?.uniqueFieldName ||
+      actionData?.importAction?.idFieldName ||
+      actionData?.importAction?.action
+    ) {
+      const importName = actionData.importAction.importName ?? null;
+      const uniqueFieldName = actionData.importAction.uniqueFieldName ?? null;
+      const idFieldName = actionData.importAction.idFieldName ?? null;
+      const action = actionData.importAction.action ?? null;
+      if (importName && action) {
+        importAction = new ImportAction(importName, uniqueFieldName, idFieldName, action);
       }
     }
 

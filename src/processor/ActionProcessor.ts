@@ -4,6 +4,7 @@ import { DataSheetProcessor } from './DataSheetProcessor';
 import { ExecConf } from '../model/ExecConf';
 import { SalesforceBulkApiLoader } from '../salesforce/SalesforceBulkApiLoader';
 import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
+import { ImportAction } from '../model/ImportAction';
 
 export class ActionProcessor {
   /**
@@ -43,24 +44,57 @@ export class ActionProcessor {
 
           // Load data using Bulk API v2
           const apiBulkLoader = new SalesforceBulkApiLoader(execConf.importConf);
-          const insertedOk = await apiBulkLoader.insertDataWithBulkAPI(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
+          let executionOk;
+          if (action.importAction.action == "Insert") {
+            executionOk = await apiBulkLoader.insertDataWithBulkAPI(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
+          } else if (action.importAction.action == "Delete") {
+            executionOk = await apiBulkLoader.deleteDataWithBulkAPI(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
+          }
           console.log(`Data loading for sheet "${sheetName}" completed.`);
 
-          if (!insertedOk && execConf.importConf.stopOnError) {
-            console.error(`Errors inserting data for sheet "${sheetName}". Stopping further processing.`);
+          if (!executionOk && execConf.importConf.stopOnError) {
+            console.error(`Errors loading data for sheet "${sheetName}". Stopping further processing.`);
             if (execConf.importConf.rollbackOnError) {
-              console.error(`WIP: Rolling back changes from sheet "${sheetName}".`);
+              console.error(`Rolling back changes from sheet "${sheetName}".`);
+              const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action));
+              this.processActions(rollbackActions, sheetsData, execConf);
             }
             return;
           }
-
         } catch (error: any) {
           console.error(`Error loading data for sheet "${sheetName}":`, error);
-          // Consider how to handle errors: continue, rethrow, etc.  For now, continue.
         }
       }
     }
   }
 
+  /**
+ * Generates a new array of actions for rollback (delete) from the given actions array,
+ * starting from the given index and going backwards to 0.
+ * Each new action will have only an ImportAction with action="delete" and idFieldName="_ImportId".
+ * The transformAction will be omitted.
+ * @param actions The original array of actions.
+ * @param index The index to start the rollback from.
+ * @returns An array of rollback (delete) actions.
+ */
+private static generateRollbackActions(actions: Action[], index: number): Action[] {
+  const rollbackActions: Action[] = [];
+  for (let i = index; i >= 0; i--) {
+    const original = actions[i];
+    if (original.importAction) {
+      const importName = original.importAction.importName;
+      // Create a new ImportAction for delete
+      const deleteImportAction = new ImportAction(
+        importName,
+        '',
+        '_ImportId',
+        'Delete'
+      );
+      // Create a new Action with only the delete ImportAction
+      rollbackActions.push(new Action(original.name, undefined, deleteImportAction));
+    }
+  }
+  return rollbackActions;
+}
 
 }
