@@ -1,4 +1,4 @@
-export type ActionType = "Insert" | "Update" | "Upsert" | "Delete";
+export type ActionType = "insert" | "update" | "upsert" | "delete";
 export class ImportAction {
   importName:string;
   uniqueFieldName: string;

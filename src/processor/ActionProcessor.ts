@@ -29,7 +29,17 @@ export class ActionProcessor {
       // 1. Transformation
       if (action.transformAction && action.transformAction.fieldsConf) {
         console.log(`Processing transformation for DataSheet "${sheetName}"...`);
-        DataSheetProcessor.processDataSheet(dataSheet, action.transformAction, sheetsData);
+        try {
+          DataSheetProcessor.processDataSheet(dataSheet, action.transformAction, sheetsData);
+        }catch (error: any) {
+          console.error(`Error processing transformation for DataSheet "${sheetName}": ${error.message}`);
+          if (execConf.importConf.rollbackOnError) {
+            console.error(`Rolling back changes from sheet "${sheetName}".`);
+            const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action) - 1);
+            this.processActions(rollbackActions, sheetsData, execConf);
+          }
+          return;
+        }
       }
 
       // 2. Import
@@ -45,10 +55,10 @@ export class ActionProcessor {
           // Load data using Bulk API v2
           const apiBulkLoader = new SalesforceBulkApiLoader(execConf.importConf);
           let executionOk;
-          if (action.importAction.action == "Insert") {
-            executionOk = await apiBulkLoader.insertDataWithBulkAPI(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
-          } else if (action.importAction.action == "Delete") {
-            executionOk = await apiBulkLoader.deleteDataWithBulkAPI(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
+          if (action.importAction.action == "insert") {
+            executionOk = await apiBulkLoader.bulkApiOperation(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
+          } else if (action.importAction.action == "delete") {
+            executionOk = await apiBulkLoader.bulkApiOperation(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
           }
           console.log(`Data loading for sheet "${sheetName}" completed.`);
 
@@ -62,7 +72,7 @@ export class ActionProcessor {
             return;
           }
         } catch (error: any) {
-          console.error(`Error loading data for sheet "${sheetName}":`, error);
+          throw new Error(`Error loading data for sheet "${sheetName}": ${error.message}`);
         }
       }
     }
@@ -88,7 +98,7 @@ private static generateRollbackActions(actions: Action[], index: number): Action
         importName,
         '',
         '_ImportId',
-        'Delete'
+        'delete'
       );
       // Create a new Action with only the delete ImportAction
       rollbackActions.push(new Action(original.name, undefined, deleteImportAction));
