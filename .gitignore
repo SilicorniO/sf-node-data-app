@@ -2,6 +2,7 @@
 
 # Compiled output
 /dist
+/dist-exec
 /build
 /out
 /bundle

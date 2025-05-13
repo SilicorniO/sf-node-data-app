@@ -10,7 +10,9 @@
     "start-csv-big": "ts-node src/Index.ts --csvFiles input/data_big.csv -c input/conf_csv_big.yaml -o output",
     "debug": "node --inspect-brk -r ts-node/register src/Index.ts -e input/example.xlsx -c input/conf_import.yaml -o output --includeHeaderNames",
     "debug-csv": "node --inspect-brk -r ts-node/register src/Index.ts --csvFiles input/data.csv -c input/conf_csv.yaml -o output",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "npm run build:ts && pkg dist/index.js",
+    "build:ts": "tsc"
   },
   "keywords": [],
   "author": "",
@@ -32,6 +34,23 @@
     "js-yaml": "^4.1.0",
     "jsforce": "^3.8.1",
     "papaparse": "^5.5.2",
+    "pkg": "^5.8.1",
     "xlsx": "^0.18.5"
+  },
+  "pkg": {
+    "scripts": [
+      "dist/**/*.js"
+    ],
+    "assets": [
+      "node_modules/axios/**/*",
+      "config/**/*",
+      "data/**/*"
+    ],
+    "targets": [
+      "node18-win-x64",
+      "node18-linux-x64",
+      "node18-macos-x64"
+    ],
+    "outputPath": "dist-exec"
   }
 }
