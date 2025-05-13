@@ -19,6 +19,12 @@ export class ActionProcessor {
     execConf: ExecConf
   ): Promise<void> {
     for (const action of actions) {
+      // wait startingtime of the action
+      if (action.waitStartingTime > 0) {
+        console.log(`Waiting ${action.waitStartingTime} ms before processing action "${action.name}"...`);
+        await new Promise(resolve => setTimeout(resolve, action.waitStartingTime * 1000));
+      }
+
       const sheetName = action.name;
       const dataSheet = sheetsData[sheetName];
       if (!dataSheet) {

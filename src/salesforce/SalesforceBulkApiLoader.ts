@@ -4,7 +4,6 @@ import { ImportConf } from '../model/ImportConf';
 import { DataSheet } from '../model/DataSheet';
 import { ImportAction, ActionType } from '../model/ImportAction';
 
-const API_VERSION = 'v58.0';
 const IMPORT_ID_LABEL = '_ImportId';
 const ERROR_INSERT_MESSAGE_LABEL = '_ErrorInsertMessage';
 const ERROR_REMOVE_MESSAGE_LABEL = '_ErrorRemoveMessage';
@@ -28,7 +27,7 @@ export class SalesforceBulkApiLoader {
 
   private getAxiosInstance(instanceUrl: string, accessToken: string) {
     return axios.create({
-      baseURL: `${instanceUrl}/services/data/${API_VERSION}`,
+      baseURL: `${instanceUrl}/services/data/v${this.importConf.apiVersion}`,
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',

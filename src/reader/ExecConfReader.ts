@@ -33,8 +33,9 @@ export class ExecConfReader {
     const bulkApiPollIntervalSec = importConfData?.bulkApiPollIntervalSec ?? null;
     const stopOnError = importConfData?.stopOnError ?? false;
     const rollbackOnError = importConfData?.rollbackOnError ?? false;
+    const apiVersion = importConfData?.apiVersion ?? "58.0";
 
-    return new ImportConf(bulkApiMaxWaitSec, bulkApiPollIntervalSec, stopOnError, rollbackOnError);
+    return new ImportConf(bulkApiMaxWaitSec, bulkApiPollIntervalSec, stopOnError, rollbackOnError, apiVersion);
   }
 
   private static parseActions(actionsData: any[]): Action[] {
@@ -46,6 +47,7 @@ export class ExecConfReader {
 
   private static parseAction(actionData: any): Action {
     const name = actionData?.name ?? null;
+    const waitStartingTime = actionData?.waitStartingTime ?? 0;
 
     let transformAction: TransformAction | undefined = undefined;
     if (actionData?.transformAction?.fieldsConf) {
@@ -70,7 +72,7 @@ export class ExecConfReader {
       }
     }
 
-    return new Action(name, transformAction, importAction);
+    return new Action(name, waitStartingTime, transformAction, importAction);
   }
 
   private static parseFieldsConf(fieldsConfData: any[]): FieldConf[] {
