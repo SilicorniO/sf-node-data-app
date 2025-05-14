@@ -42,7 +42,7 @@ export class ActionProcessor {
           if (execConf.importConf.rollbackOnError) {
             console.error(`Rolling back changes from sheet "${sheetName}".`);
             const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action) - 1);
-            this.processActions(rollbackActions, sheetsData, execConf);
+            await this.processActions(rollbackActions, sheetsData, execConf);
           }
           return;
         }
@@ -73,12 +73,18 @@ export class ActionProcessor {
             if (execConf.importConf.rollbackOnError) {
               console.error(`Rolling back changes from sheet "${sheetName}".`);
               const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action));
-              this.processActions(rollbackActions, sheetsData, execConf);
+              await this.processActions(rollbackActions, sheetsData, execConf);
             }
             return;
           }
         } catch (error: any) {
-          throw new Error(`Error loading data for sheet "${sheetName}": ${error.message}`);
+          console.error(`Error loading data for sheet "${sheetName}": ${error.message}`);
+          if (execConf.importConf.rollbackOnError) {
+            console.error(`Rolling back changes from sheet "${sheetName}".`);
+            const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action) - 1);
+            await this.processActions(rollbackActions, sheetsData, execConf);
+          }
+          return;
         }
       }
     }
