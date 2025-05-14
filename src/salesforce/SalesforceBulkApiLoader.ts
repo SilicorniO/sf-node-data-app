@@ -98,10 +98,8 @@ export class SalesforceBulkApiLoader {
           (apiName) => apiName === importAction.uniqueFieldName
         );
       }
-      if (importAction.action !== 'delete' && indexIdField < 0 && indexUniqueField < 0) {
-        throw new Error(
-          `The object ${importAction.importName} must have a valid idFieldName or uniqueFieldName`
-        );
+      if (indexUniqueField == -1 && indexIdField == -1) {
+        console.info(`The object ${importAction.importName} hasn't got a valid idFieldName or uniqueFieldName, so Ids and errors will be recovered in order.`);
       }
 
       // Generate a map of data based on the unique field or id field
@@ -188,7 +186,7 @@ export class SalesforceBulkApiLoader {
           { headers: { Accept: 'text/csv' } },
         );
         const responseProcessed = CsvProcessor.parseCSV(successfulResults.data as string);
-        responseProcessed.data.forEach((row) => {
+        responseProcessed.data.forEach((row, index) => {
           // Try to match by Id first, then by unique field
           let keyValue = '';
           if (indexIdField >= 0 && row.length > indexIdField + 2) {
@@ -196,7 +194,7 @@ export class SalesforceBulkApiLoader {
           } else if (indexUniqueField >= 0 && row.length > indexUniqueField + 2) {
             keyValue = row[indexUniqueField + 2];
           }
-          const dataRowIndex = dataMap.get(keyValue);
+          const dataRowIndex = dataMap.get(keyValue) ?? index;
           if (dataRowIndex !== undefined) {
             dataSheet.data[dataRowIndex][indexColumnId] = row[0]; // Set Id
           }
@@ -224,7 +222,7 @@ export class SalesforceBulkApiLoader {
           { headers: { Accept: 'text/csv' } },
         );
         const responseFailed = CsvProcessor.parseCSV(failedResults.data as string);
-        responseFailed.data.forEach((row) => {
+        responseFailed.data.forEach((row, index) => {
           let dataRowIndex;
           if (importAction.action == "delete") {
             const idFieldValue = row[0]; // The Id is in the first column of the failed results
@@ -236,7 +234,7 @@ export class SalesforceBulkApiLoader {
             } else if (indexUniqueField >= 0 && row.length > indexUniqueField + 2) {
               keyValue = row[indexUniqueField + 2];
             }
-            dataRowIndex = dataMap.get(keyValue);
+            dataRowIndex = dataMap.get(keyValue) ?? index;
           }
           if (dataRowIndex !== undefined) {
             dataSheet.data[dataRowIndex][indexColumnErrorMessage] = row[1]; // The error message is in the second column
