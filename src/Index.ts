@@ -66,7 +66,7 @@ async function main() {
 
     // generate output csvs
     try {
-      await CsvGenerator.generateCsvFiles(sheetsData, outputFolder);
+      await CsvGenerator.generateCsvFiles(csvSheetsData, outputFolder);
     } catch (error: any) {
       console.error('Error:', error.message);
     } 
