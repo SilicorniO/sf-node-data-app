@@ -26,8 +26,8 @@ export class ExcelReader {
         for (let C = 0; C < numCols; ++C) {
           const firstRowAddress = XLSX.utils.encode_cell({ r: 0, c: C });
           const secondRowAddress = XLSX.utils.encode_cell({ r: 1, c: C });
-          const firstRowValue = worksheet[firstRowAddress]?.v as string || `Column_${C + 1}_Row1`;
-          const secondRowValue = worksheet[secondRowAddress]?.v as string || `Column_${C + 1}_Row2`;
+          const firstRowValue = worksheet[firstRowAddress]?.v as string || '';
+          const secondRowValue = worksheet[secondRowAddress]?.v as string || '';
 
           if (includeHeaderNames) {
             headerNames.push(firstRowValue);
