@@ -69,7 +69,23 @@ async function main() {
       await CsvGenerator.generateCsvFiles(csvSheetsData, outputFolder);
     } catch (error: any) {
       console.error('Error:', error.message);
-    } 
+    }
+
+    // generate csvs for sheetsData not found in execlSheetsData or csvSheetsData
+    const missingSheets = Object.keys(sheetsData).filter(sheetName => !excelSheetsData[sheetName] && !csvSheetsData[sheetName]);
+    if (missingSheets.length > 0) {
+      console.log(`Generating CSV files for generated sheets: ${missingSheets.join(', ')}`);
+      
+      // convert missingSheets to dictionary
+      const missingSheetsData: { [sheetName: string]: DataSheet } = {};
+      for (const sheetName of missingSheets) {
+        missingSheetsData[sheetName] = sheetsData[sheetName];
+      }
+
+      // Generate CSV files for missing sheets
+      await CsvGenerator.generateCsvFiles(missingSheetsData, outputFolder);
+    }
+    console.log('All actions completed successfully.');
 
   } catch (error) {
     console.error('Failed to process files:', error);

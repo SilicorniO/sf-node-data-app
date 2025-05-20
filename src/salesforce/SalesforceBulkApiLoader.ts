@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { CsvProcessor } from '../processor/CsvProcessor';
-import { ImportConf } from '../model/ImportConf';
+import { AppConfiguration } from '../model/AppConfiguration';
 import { DataSheet } from '../model/DataSheet';
 import { ImportAction, ActionType } from '../model/ImportAction';
+import { ExportAction } from '../model/ExportAction';
 
 const IMPORT_ID_LABEL = '_ImportId';
 const ERROR_INSERT_MESSAGE_LABEL = '_ErrorInsertMessage';
@@ -19,15 +20,15 @@ interface JobInfo {
 }
 
 export class SalesforceBulkApiLoader {
-  importConf: ImportConf;
+  appConfiguration: AppConfiguration;
 
-  constructor(importConf: ImportConf) {
-    this.importConf = importConf;
+  constructor(appConfiguration: AppConfiguration) {
+    this.appConfiguration = appConfiguration;
   }
 
   private getAxiosInstance(instanceUrl: string, accessToken: string) {
     return axios.create({
-      baseURL: `${instanceUrl}/services/data/v${this.importConf.apiVersion}`,
+      baseURL: `${instanceUrl}/services/data/v${this.appConfiguration.apiVersion}`,
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
@@ -161,13 +162,13 @@ export class SalesforceBulkApiLoader {
 
       do {
         const elapsedTimeSec = (Date.now() - startTime) / MS_IN_SEC;
-        if (elapsedTimeSec > this.importConf.bulkApiMaxWaitSec) {
+        if (elapsedTimeSec > this.appConfiguration.bulkApiMaxWaitSec) {
           throw new Error(
-            `Bulk API v2 ${importAction.action} job for object ${importAction.importName} exceeded the maximum wait time of ${this.importConf.bulkApiMaxWaitSec} seconds.`
+            `Bulk API v2 ${importAction.action} job for object ${importAction.importName} exceeded the maximum wait time of ${this.appConfiguration.bulkApiMaxWaitSec} seconds.`
           );
         }
 
-        await new Promise((resolve) => setTimeout(resolve, this.importConf.bulkApiPollIntervalSec * MS_IN_SEC));
+        await new Promise((resolve) => setTimeout(resolve, this.appConfiguration.bulkApiPollIntervalSec * MS_IN_SEC));
         const statusResponse = await axiosInstance.get(`/jobs/ingest/${jobId}`);
         jobStatus = statusResponse.data as JobInfo;
         jobCompleted =
@@ -255,5 +256,82 @@ export class SalesforceBulkApiLoader {
     } catch (error: any) {
       throw new Error(`Error during Bulk API v2 ${importAction.action} operation: ${error.message}`);
     }
+  }
+
+  /**
+   * Executes a SOQL query using Salesforce Bulk API v2 and returns the results as a DataSheet.
+   * @param instanceUrl The Salesforce instance URL.
+   * @param accessToken The Salesforce access token.
+   * @param exportAction The ExportAction containing the SOQL query.
+   * @param name The name to assign to the resulting DataSheet.
+   * @returns Promise<DataSheet>
+   */
+  public async bulkApiQuery(
+    instanceUrl: string,
+    accessToken: string,
+    exportAction: ExportAction,
+    name: string
+  ): Promise<DataSheet> {
+    const axiosInstance = this.getAxiosInstance(instanceUrl, accessToken);
+
+    // 1. Create Bulk API v2 query job
+    const jobRequest = {
+      operation: 'query',
+      query: exportAction.query,
+      contentType: 'CSV',
+      lineEnding: CSV_LINE_ENDING,
+    };
+    const jobResponse = await axiosInstance.post('/jobs/query', jobRequest);
+    const jobId = (jobResponse.data as JobInfo).id;
+    if (!jobId) {
+      throw new Error('Failed to create Bulk API v2 query job: Job ID is missing.');
+    }
+
+    // 2. Wait for the job to complete
+    let jobCompleted = false;
+    let jobStatus;
+    const startTime = Date.now();
+
+    do {
+      const elapsedTimeSec = (Date.now() - startTime) / MS_IN_SEC;
+      if (elapsedTimeSec > this.appConfiguration.bulkApiMaxWaitSec) {
+        throw new Error(
+          `Bulk API v2 query job exceeded the maximum wait time of ${this.appConfiguration.bulkApiMaxWaitSec} seconds.`
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, this.appConfiguration.bulkApiPollIntervalSec * MS_IN_SEC));
+      const statusResponse = await axiosInstance.get(`/jobs/query/${jobId}`);
+      jobStatus = statusResponse.data as JobInfo;
+      jobCompleted =
+        jobStatus.state === 'JobComplete' ||
+        jobStatus.state === 'Failed' ||
+        jobStatus.state === 'Aborted';
+    } while (!jobCompleted);
+
+    if (jobStatus.state === 'Failed') {
+      throw new Error(`Bulk API v2 query job failed: ${jobStatus.errorMessage}`);
+    }
+
+    // 3. Retrieve results as CSV
+    const resultsResponse = await axiosInstance.get(
+      `/jobs/query/${jobId}/results`,
+      { headers: { Accept: 'text/csv' } }
+    );
+    const csvString = resultsResponse.data as string;
+
+    // 4. Parse CSV to DataSheet
+    const parsed = CsvProcessor.parseCSV(csvString);
+    const headerNames = parsed.headers;
+    const columnNames = parsed.headers;
+    const data = parsed.data;
+
+    const dataSheet: DataSheet = {
+      name,
+      headerNames,
+      columnNames,
+      data,
+    };
+
+    return dataSheet;
   }
 }

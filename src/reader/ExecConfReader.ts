@@ -5,7 +5,8 @@ import { FieldConf } from '../model/FieldConf';
 import { Action } from '../model/Action';
 import { TransformAction } from '../model/TransformAction';
 import { ImportAction } from '../model/ImportAction';
-import { ImportConf } from '../model/ImportConf';
+import { ExportAction } from '../model/ExportAction';
+import { AppConfiguration } from '../model/AppConfiguration';
 import { ExecConf } from '../model/ExecConf';
 
 export class ExecConfReader {
@@ -15,7 +16,7 @@ export class ExecConfReader {
       const confData: any = yaml.load(confFileContent);
 
       // Construct ImportConf
-      const importConf = this.parseImportConf(confData.importConf);
+      const importConf = this.parseImportConf(confData.appConfiguration);
 
       // Construct Action array
       const actions = this.parseActions(confData.objectsConf || confData.actions);
@@ -28,14 +29,14 @@ export class ExecConfReader {
     }
   }
 
-  private static parseImportConf(importConfData: any): ImportConf {
+  private static parseImportConf(importConfData: any): AppConfiguration {
     const bulkApiMaxWaitSec = importConfData?.bulkApiMaxWaitSec ?? null;
     const bulkApiPollIntervalSec = importConfData?.bulkApiPollIntervalSec ?? null;
     const stopOnError = importConfData?.stopOnError ?? false;
     const rollbackOnError = importConfData?.rollbackOnError ?? false;
     const apiVersion = importConfData?.apiVersion ?? "58.0";
 
-    return new ImportConf(bulkApiMaxWaitSec, bulkApiPollIntervalSec, stopOnError, rollbackOnError, apiVersion);
+    return new AppConfiguration(bulkApiMaxWaitSec, bulkApiPollIntervalSec, stopOnError, rollbackOnError, apiVersion);
   }
 
   private static parseActions(actionsData: any[]): Action[] {
@@ -72,7 +73,13 @@ export class ExecConfReader {
       }
     }
 
-    return new Action(name, waitStartingTime, transformAction, importAction);
+    // Parse exportAction if present
+    let exportAction: ExportAction | undefined = undefined;
+    if (actionData?.exportAction?.query) {
+      exportAction = new ExportAction(actionData.exportAction.query);
+    }
+
+    return new Action(name, waitStartingTime, transformAction, importAction, exportAction);
   }
 
   private static parseFieldsConf(fieldsConfData: any[]): FieldConf[] {

@@ -1,5 +1,5 @@
 // src/model/ImportConf.ts
-export class ImportConf {
+export class AppConfiguration {
   bulkApiMaxWaitSec: number;
   bulkApiPollIntervalSec: number;
   stopOnError: boolean;
