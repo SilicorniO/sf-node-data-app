@@ -59,8 +59,17 @@ export class SalesforceBulkApiLoader {
         .filter(idArr => idArr[0]);
       return { headers: deleteHeaders, data: deleteData };
     } else {
-      // For insert, update, upsert: use all columns
-      return { headers: dataSheet.columnNames, data: dataSheet.data };
+      // For insert, update, upsert: exclude columns with empty columnNames
+      const validIndexes: number[] = [];
+      const headers: string[] = [];
+      dataSheet.columnNames.forEach((col, idx) => {
+        if (col && col.trim() !== '') {
+          validIndexes.push(idx);
+          headers.push(col);
+        }
+      });
+      const data = dataSheet.data.map(row => validIndexes.map(idx => row[idx]));
+      return { headers, data };
     }
   }
 
