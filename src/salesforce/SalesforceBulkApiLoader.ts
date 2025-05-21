@@ -40,39 +40,55 @@ export class SalesforceBulkApiLoader {
    * Generates the CSV data and headers for the given operation.
    */
   private generateCsvPayload(
-    operation: ActionType,
-    dataSheet: DataSheet,
-    importAction: ImportAction
-  ): { headers: string[]; data: string[][] } {
-    if (operation === 'delete') {
-      // Only the Id field is needed for delete
-      const indexIdField = dataSheet.columnNames.findIndex(
+  operation: ActionType,
+  dataSheet: DataSheet,
+  importAction: ImportAction
+): { headers: string[]; data: string[][] } {
+  if (operation === 'delete') {
+    // Only the Id field is needed for delete
+    const indexIdField = dataSheet.columnNames.findIndex(
+      (apiName) => apiName === importAction.idFieldName
+    );
+    if (indexIdField < 0) {
+      throw new Error(
+        `The object ${importAction.importName} doesn't have a valid idFieldName: '${importAction.idFieldName}'`
+      );
+    }
+    const deleteHeaders = ['Id'];
+    const deleteData = dataSheet.data
+      .map(row => [row[indexIdField]])
+      .filter(idArr => idArr[0]);
+    return { headers: deleteHeaders, data: deleteData };
+  } else {
+    // For insert, update, upsert: exclude columns with empty columnNames
+    const validIndexes: number[] = [];
+    const headers: string[] = [];
+    dataSheet.columnNames.forEach((col, idx) => {
+      if (col && col.trim() !== '') {
+        validIndexes.push(idx);
+        headers.push(col);
+      }
+    });
+
+    let filteredData = dataSheet.data.map(row => validIndexes.map(idx => row[idx]));
+
+    // Exclude data rows with an Id field when action is "insert"
+    if (operation === 'insert') {
+      const indexUniqueField = dataSheet.columnNames.findIndex(
         (apiName) => apiName === importAction.idFieldName
       );
-      if (indexIdField < 0) {
-        throw new Error(
-          `The object ${importAction.importName} doesn't have a valid idFieldName: '${importAction.idFieldName}'`
-        );
+      if (indexUniqueField !== -1) {
+        filteredData = filteredData.filter((row, i) => {
+          // Find the original row index in dataSheet.data
+          const originalRow = dataSheet.data[i];
+          return !originalRow[indexUniqueField];
+        });
       }
-      const deleteHeaders = ['Id'];
-      const deleteData = dataSheet.data
-        .map(row => [row[indexIdField]])
-        .filter(idArr => idArr[0]);
-      return { headers: deleteHeaders, data: deleteData };
-    } else {
-      // For insert, update, upsert: exclude columns with empty columnNames
-      const validIndexes: number[] = [];
-      const headers: string[] = [];
-      dataSheet.columnNames.forEach((col, idx) => {
-        if (col && col.trim() !== '') {
-          validIndexes.push(idx);
-          headers.push(col);
-        }
-      });
-      const data = dataSheet.data.map(row => validIndexes.map(idx => row[idx]));
-      return { headers, data };
     }
+
+    return { headers, data: filteredData };
   }
+}
 
   /**
    * Loads data into Salesforce using Bulk API v2 for insert, update, upsert, or delete.
