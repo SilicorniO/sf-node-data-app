@@ -41,7 +41,13 @@ export class ActionProcessor {
             action.exportAction,
             sheetName
           );
-          sheetsData[sheetName] = exportDataSheet;
+          // If sheet doesn't exist, create it
+          if (!sheetsData[sheetName]) {
+            sheetsData[sheetName] = exportDataSheet;
+          } else {
+            // Merge the new data with the existing DataSheet
+            sheetsData[sheetName] = DataSheetProcessor.mergeDataSheets(exportDataSheet, sheetsData[sheetName], action.importAction?.uniqueFieldName);
+          }
           console.log(`Exported data for "${sheetName}" loaded into sheetsData.`);
         } catch (error: any) {
           console.error(`Error exporting data for "${sheetName}": ${error.message}`);

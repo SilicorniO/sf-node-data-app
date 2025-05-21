@@ -106,4 +106,125 @@ export class DataSheetProcessor {
       }
     };
   }
+
+  /**
+   * Merges two DataSheets into one, matching rows by a unique field.
+   * Columns with the same name are merged, and data from the master DataSheet
+   * overrides data from the secondary DataSheet for the same row and column.
+   * If uniqueFieldName is not found, secondary rows are appended at the end.
+   * @param master The master DataSheet (takes precedence).
+   * @param secondary The secondary DataSheet.
+   * @param uniqueFieldName The column name used to match rows.
+   * @returns The merged DataSheet.
+   */
+  public static mergeDataSheets(
+    master: DataSheet,
+    secondary: DataSheet,
+    uniqueFieldName?: string
+  ): DataSheet {
+    // Merge column names (preserve order: master first, then secondary unique columns)
+    const allColumns = [...master.columnNames];
+    const allHeaders = [...master.headerNames];
+    secondary.columnNames.forEach((col, index) => {
+      const allColumnsIndex = allColumns.indexOf(col);
+      if (allColumnsIndex === -1) {
+        allColumns.push(col);
+        allHeaders.push(secondary.headerNames[index]);
+      } else if ((allHeaders[allColumnsIndex] === '' || allHeaders[allColumnsIndex] === allColumns[allColumnsIndex]) && secondary.headerNames[index] !=='' ) {
+        allHeaders[allColumnsIndex] = secondary.headerNames[index];
+      }
+    });
+
+    // Create maps for column name to index for master and secondary
+    const masterColIndexMap: { [col: string]: number } = {};
+    master.columnNames.forEach((col, idx) => {
+      masterColIndexMap[col] = idx;
+    });
+    const secondaryColIndexMap: { [col: string]: number } = {};
+    secondary.columnNames.forEach((col, idx) => {
+      secondaryColIndexMap[col] = idx;
+    });
+
+    // If uniqueFieldName is not provided or not found, append secondary rows after master rows
+    const masterUniqueIdx = uniqueFieldName ? masterColIndexMap[uniqueFieldName] ?? -1 : -1;
+    const secondaryUniqueIdx = uniqueFieldName ? secondaryColIndexMap[uniqueFieldName] ?? -1 : -1;
+
+    if (
+      !uniqueFieldName ||
+      masterUniqueIdx === -1 ||
+      secondaryUniqueIdx === -1
+    ) {
+      // Fallback: append all secondary rows after master rows
+      const mergedData = [...master.data];
+      for (const row of secondary.data) {
+        mergedData.push(
+          allColumns.map((col) => {
+            const secIdx = secondaryColIndexMap[col];
+            return secIdx !== undefined ? row[secIdx] : '';
+          })
+        );
+      }
+      return {
+        name: master.name,
+        headerNames: allHeaders,
+        columnNames: allColumns,
+        data: mergedData,
+      };
+    }
+
+    // Build maps for fast lookup by unique field value
+    const masterMap = new Map<string, string[]>();
+    for (const row of master.data) {
+      const key = row[masterUniqueIdx];
+      if (key) masterMap.set(key, row);
+    }
+    const secondaryMap = new Map<string, string[]>();
+    for (const row of secondary.data) {
+      const key = row[secondaryUniqueIdx];
+      if (key) secondaryMap.set(key, row);
+    }
+
+    const mergedData: string[][] = [];
+
+    // Merge rows by unique key (master rows first)
+    for (const [key, masterRow] of masterMap.entries()) {
+      const mergedRow: string[] = [];
+      const secondaryRow = secondaryMap.get(key);
+      for (const col of allColumns) {
+        const masterColIdx = masterColIndexMap[col];
+        const secondaryColIdx = secondaryColIndexMap[col];
+
+        const masterVal = masterColIdx !== undefined ? masterRow[masterColIdx] : '';
+        let valueToSet = masterVal;
+
+        // If master value is empty/null and secondary exists, use secondary value
+        if ((masterVal === '' || masterVal === null || masterVal === undefined) && secondaryRow && secondaryColIdx !== undefined) {
+          const secondaryVal = secondaryRow[secondaryColIdx];
+          valueToSet = secondaryVal;
+        }
+
+        mergedRow.push(valueToSet);
+      }
+      mergedData.push(mergedRow);
+      // Remove from secondaryMap so we can later add only unmatched secondary rows
+      if (secondaryRow) secondaryMap.delete(key);
+    }
+
+    // Add remaining secondary rows that were not in master
+    for (const [, secondaryRow] of secondaryMap.entries()) {
+      const row: string[] = [];
+      for (const col of allColumns) {
+        const idx = secondaryColIndexMap[col];
+        row.push(idx !== undefined ? secondaryRow[idx] : '');
+      }
+      mergedData.push(row);
+    }
+
+    return {
+      name: master.name,
+      headerNames: allHeaders,
+      columnNames: allColumns,
+      data: mergedData,
+    };
+  }
 }
