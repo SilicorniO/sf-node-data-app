@@ -66,8 +66,11 @@ export class ExecConfReader {
       const importName = actionData.importAction.importName ?? null;
       const uniqueColumnName = actionData.importAction.uniqueColumnName ?? null;
       const action = actionData.importAction.action ?? null;
-      const importColumns = Array.isArray(actionData.importAction.importColumns)
+      const importColumns = actionData.importAction.importColumns
         ? actionData.importAction.importColumns
+            .split(',')
+            .map((col: string) => col.trim())
+            .filter((col: string) => col.length > 0)
         : [];
       if (importName && action) {
         importAction = new ImportAction(importName, uniqueColumnName, action, importColumns);

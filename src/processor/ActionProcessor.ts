@@ -134,7 +134,7 @@ export class ActionProcessor {
   /**
  * Generates a new array of actions for rollback (delete) from the given actions array,
  * starting from the given index and going backwards to 0.
- * Each new action will have only an ImportAction with action="delete" and idFieldName="_ImportId".
+ * Each new action will have only an ImportAction with action="delete".
  * The transformAction will be omitted.
  * @param actions The original array of actions.
  * @param index The index to start the rollback from.
@@ -150,8 +150,8 @@ private static generateRollbackActions(actions: Action[], index: number): Action
       const deleteImportAction = new ImportAction(
         importName,
         '',
-        '_ImportId',
-        'delete'
+        'delete',
+        []
       );
       // Create a new Action with only the delete ImportAction
       rollbackActions.push(new Action(original.name, 0, undefined, deleteImportAction));
