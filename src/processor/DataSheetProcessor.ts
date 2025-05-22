@@ -2,7 +2,6 @@ import { DataSheet } from '../model/DataSheet';
 import { TransformAction } from '../model/TransformAction';
 
 export class DataSheetProcessor {
-  
   /**
    * Processes a DataSheet by applying transformations defined in the ObjectConf.
    * @param dataSheet The DataSheet to process.
@@ -14,15 +13,20 @@ export class DataSheetProcessor {
     transformAction: TransformAction,
     sheetsData: { [sheetName: string]: DataSheet },
   ): void {
-    // Precompute indices and transformations for better performance
-    const fieldTransformations = transformAction.fieldsConf
-      .filter((fieldConf) => fieldConf.transformation && fieldConf.transformation.trim() !== '')
-      .map((fieldConf) => ({
-        fieldIndex: dataSheet.columnNames.indexOf(fieldConf.fieldName),
-        transformation: this.compileTransformation(fieldConf.transformation, sheetsData),
-        fieldConf,
-      }))
-      .filter(({ fieldIndex }) => fieldIndex !== -1);
+    // Prepare a list of transformations to apply, one per field
+    const fieldTransformations = [];
+    for (const fieldConf of transformAction.fieldsConf) {
+      if (fieldConf.transformation && fieldConf.transformation.trim() !== '') {
+        const fieldIndex = dataSheet.columnNames.indexOf(fieldConf.fieldName);
+        if (fieldIndex !== -1) {
+          fieldTransformations.push({
+            fieldIndex,
+            transformation: fieldConf.transformation,
+            fieldConf,
+          });
+        }
+      }
+    }
 
     if (fieldTransformations.length === 0) {
       console.log(`No transformations found for DataSheet "${dataSheet.name}".`);
@@ -32,32 +36,41 @@ export class DataSheetProcessor {
     // Apply transformations to each row
     console.log(`Executing transformations found for DataSheet "${dataSheet.name}".`);
     for (const row of dataSheet.data) {
-      for (const { fieldIndex, transformation, fieldConf } of fieldTransformations) {
+      for (const { fieldIndex, transformation } of fieldTransformations) {
         const originalValue = row[fieldIndex];
-        const transformedValue = transformation(originalValue);
-        row[fieldIndex] = transformedValue; // Replace the value with the transformed value
+        const transformedValue = DataSheetProcessor.applyTransformation(
+          transformation,
+          originalValue,
+          sheetsData
+        );
+        row[fieldIndex] = transformedValue;
       }
     }
   }
 
   /**
-   * Compiles a transformation into a reusable function for better performance.
-   * @param transformation The transformation text to compile.
+   * Applies a transformation string to a value, using other sheets if needed.
+   * @param transformation The transformation text to apply.
+   * @param value The value to transform.
    * @param sheetsData A dictionary of all DataSheets being processed.
-   * @returns A function that applies the transformation to a given value.
+   * @returns The transformed value as a string.
    */
-  private static compileTransformation(
+  private static applyTransformation(
     transformation: string,
-    sheetsData: { [sheetName: string]: DataSheet },
-  ): (value: string) => string {
-    // Precompute indices for target sheets and columns
+    value: string,
+    sheetsData: { [sheetName: string]: DataSheet }
+  ): string {
+    // Find all variables in the transformation string
     const variableRegex = /\$\{([^}]+)\}/g;
-    const variableMappings: { [variable: string]: (value: string) => string } = {};
+    let translatedTransformation = transformation;
+    let match: RegExpExecArray | null;
 
-    transformation.replace(variableRegex, (match, variable) => {
+    // Replace each variable with its looked-up value
+    while ((match = variableRegex.exec(transformation)) !== null) {
+      const variable = match[1];
       const [sheetName, apiName, targetColumn] = variable.split('.');
       if (!sheetName || !apiName || !targetColumn) {
-        throw new Error(`Invalid variable format: ${match}`);
+        throw new Error(`Invalid variable format: \${${variable}}`);
       }
 
       const targetSheet = sheetsData[sheetName];
@@ -69,42 +82,36 @@ export class DataSheetProcessor {
       const targetColumnIndex = targetSheet.columnNames.indexOf(targetColumn);
 
       if (apiNameIndex === -1 || targetColumnIndex === -1) {
-        throw new Error(`Invalid column references in variable: ${match}`);
+        throw new Error(`Invalid column references in variable: \${${variable}}`);
       }
 
-      // Build an index for fast lookups
+      // Build a lookup map for the target sheet
       const lookupMap = new Map<string, string>();
       for (const row of targetSheet.data) {
         lookupMap.set(row[apiNameIndex], row[targetColumnIndex]);
       }
 
-      // Store the lookup function
-      variableMappings[match] = (value: string) => {
-        const result = lookupMap.get(value);
-        if (result === undefined) {
-          throw new Error(`Value "${value}" not found for variable "${match}".`);
-        }
-        return result;
-      };
-
-      return match;
-    });
-
-    // Return a compiled function that applies the transformation
-    return (value: string) => {
-      let translatedTransformation = transformation;
-      for (const [variable, lookupFn] of Object.entries(variableMappings)) {
-        translatedTransformation = translatedTransformation.replace(variable, `'${lookupFn(value)}'`);
+      const lookupValue = lookupMap.get(value);
+      if (lookupValue === undefined) {
+        console.warn(`Transformation value not found for \${${variable}}: "${value}"`);
+        return value; // Return the original value if not found
       }
 
-      // Evaluate the translated transformation
-      try {
-        return eval(translatedTransformation).toString();
-      } catch (error) {
-        console.error(`Error evaluating transformation "${transformation}":`, error);
-        return ''; // Return an empty string if the transformation fails
-      }
-    };
+      // Replace the variable in the transformation string with the looked-up value (as a string literal)
+      translatedTransformation = translatedTransformation.replace(
+        match[0],
+        `'${lookupValue}'`
+      );
+    }
+
+    // Evaluate the translated transformation
+    try {
+      // eslint-disable-next-line no-eval
+      return eval(translatedTransformation).toString();
+    } catch (error) {
+      console.error(`Error evaluating transformation "${transformation}":`, error);
+      return '';
+    }
   }
 
   /**
@@ -130,7 +137,11 @@ export class DataSheetProcessor {
       if (allColumnsIndex === -1) {
         allColumns.push(col);
         allHeaders.push(secondary.headerNames[index]);
-      } else if ((allHeaders[allColumnsIndex] === '' || allHeaders[allColumnsIndex] === allColumns[allColumnsIndex]) && secondary.headerNames[index] !=='' ) {
+      } else if (
+        (allHeaders[allColumnsIndex] === '' ||
+          allHeaders[allColumnsIndex] === allColumns[allColumnsIndex]) &&
+        secondary.headerNames[index] !== ''
+      ) {
         allHeaders[allColumnsIndex] = secondary.headerNames[index];
       }
     });
@@ -146,8 +157,14 @@ export class DataSheetProcessor {
     });
 
     // If uniqueColumnName is not provided or not found, append secondary rows after master rows
-    const masterUniqueIdx = uniqueColumnName ? masterColIndexMap[uniqueColumnName] ?? -1 : -1;
-    const secondaryUniqueIdx = uniqueColumnName ? secondaryColIndexMap[uniqueColumnName] ?? -1 : -1;
+    const masterUniqueIdx =
+      uniqueColumnName && masterColIndexMap[uniqueColumnName] !== undefined
+        ? masterColIndexMap[uniqueColumnName]
+        : -1;
+    const secondaryUniqueIdx =
+      uniqueColumnName && secondaryColIndexMap[uniqueColumnName] !== undefined
+        ? secondaryColIndexMap[uniqueColumnName]
+        : -1;
 
     if (
       !uniqueColumnName ||
@@ -194,11 +211,18 @@ export class DataSheetProcessor {
         const masterColIdx = masterColIndexMap[col];
         const secondaryColIdx = secondaryColIndexMap[col];
 
-        const masterVal = masterColIdx !== undefined ? masterRow[masterColIdx] : '';
+        const masterVal =
+          masterColIdx !== undefined ? masterRow[masterColIdx] : '';
         let valueToSet = masterVal;
 
         // If master value is empty/null and secondary exists, use secondary value
-        if ((masterVal === '' || masterVal === null || masterVal === undefined) && secondaryRow && secondaryColIdx !== undefined) {
+        if (
+          (masterVal === '' ||
+            masterVal === null ||
+            masterVal === undefined) &&
+          secondaryRow &&
+          secondaryColIdx !== undefined
+        ) {
           const secondaryVal = secondaryRow[secondaryColIdx];
           valueToSet = secondaryVal;
         }
