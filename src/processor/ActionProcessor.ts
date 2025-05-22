@@ -46,7 +46,7 @@ export class ActionProcessor {
             sheetsData[sheetName] = exportDataSheet;
           } else {
             // Merge the new data with the existing DataSheet
-            sheetsData[sheetName] = DataSheetProcessor.mergeDataSheets(exportDataSheet, sheetsData[sheetName], action.importAction?.uniqueColumnName);
+            sheetsData[sheetName] = DataSheetProcessor.mergeDataSheets(exportDataSheet, sheetsData[sheetName], action.exportAction.uniqueColumn);
           }
           console.log(`Exported data for "${sheetName}" loaded into sheetsData.`);
         } catch (error: any) {
@@ -145,7 +145,7 @@ private static generateRollbackActions(actions: Action[], index: number): Action
   for (let i = index; i >= 0; i--) {
     const original = actions[i];
     if (original.importAction) {
-      const importName = original.importAction.importName;
+      const importName = original.importAction.objectName;
       // Create a new ImportAction for delete
       const deleteImportAction = new ImportAction(
         importName,

@@ -1,12 +1,12 @@
 export type ActionType = "insert" | "update" | "upsert" | "delete";
 export class ImportAction {
-  importName:string;
-  uniqueColumnName: string;
+  objectName:string;
+  uniqueColumn: string;
   action: ActionType;
   importColumns: string[];
-  constructor(importName: string, uniqueColumnName: string, action: ActionType, importColumns: string[]) {
-    this.importName= importName;
-    this.uniqueColumnName = uniqueColumnName;
+  constructor(objectName: string, uniqueColumn: string, action: ActionType, importColumns: string[]) {
+    this.objectName= objectName;
+    this.uniqueColumn = uniqueColumn;
     this.action = action;
     this.importColumns = importColumns;
   }

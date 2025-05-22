@@ -52,7 +52,7 @@ export class SalesforceBulkApiLoader {
       // Only the Id field is needed for delete
       if (indexIdField < 0) {
         throw new Error(
-          `The object ${importAction.importName} doesn't have a column '${ID_COLUMN}'`
+          `The object ${importAction.objectName} doesn't have a column '${ID_COLUMN}'`
         );
       }
       const deleteHeaders = [ID_COLUMN];
@@ -131,13 +131,13 @@ export class SalesforceBulkApiLoader {
         (apiName) => apiName === ID_COLUMN
       );
       let indexUniqueField = -1;
-      if (importAction.uniqueColumnName) {
+      if (importAction.uniqueColumn) {
         indexUniqueField = dataSheet.columnNames.findIndex(
-          (apiName) => apiName === importAction.uniqueColumnName
+          (apiName) => apiName === importAction.uniqueColumn
         );
       }
       if (indexUniqueField == -1 && indexIdField == -1) {
-        console.info(`The object ${importAction.importName} hasn't got a valid idFieldName or uniqueColumnName, so Ids and errors will be recovered in order.`);
+        console.info(`The object ${importAction.objectName} hasn't got a valid idFieldName or uniqueColumnName, so Ids and errors will be recovered in order.`);
       }
 
       // Generate a map of data based on the unique field or id field
@@ -154,13 +154,13 @@ export class SalesforceBulkApiLoader {
 
       // 1. Create Bulk API v2 job
       const jobRequest: any = {
-        object: importAction.importName,
+        object: importAction.objectName,
         operation: importAction.action,
         contentType: 'CSV',
         lineEnding: CSV_LINE_ENDING,
       };
-      if (importAction.action === 'upsert' && importAction.uniqueColumnName) {
-        jobRequest.externalIdFieldName = importAction.uniqueColumnName;
+      if (importAction.action === 'upsert' && importAction.uniqueColumn) {
+        jobRequest.externalIdFieldName = importAction.uniqueColumn;
       }
       const jobResponse = await axiosInstance.post('/jobs/ingest', jobRequest);
 
@@ -192,7 +192,7 @@ export class SalesforceBulkApiLoader {
         const elapsedTimeSec = (Date.now() - startTime) / MS_IN_SEC;
         if (elapsedTimeSec > this.appConfiguration.bulkApiMaxWaitSec) {
           throw new Error(
-            `Bulk API v2 ${importAction.action} job for object ${importAction.importName} exceeded the maximum wait time of ${this.appConfiguration.bulkApiMaxWaitSec} seconds.`
+            `Bulk API v2 ${importAction.action} job for object ${importAction.objectName} exceeded the maximum wait time of ${this.appConfiguration.bulkApiMaxWaitSec} seconds.`
           );
         }
 
@@ -206,7 +206,7 @@ export class SalesforceBulkApiLoader {
       } while (!jobCompleted);
 
       if (jobStatus.state === 'Failed') {
-        throw new Error(`Bulk API v2 ${importAction.action} job failed for object ${importAction.importName}: ${jobStatus.errorMessage}`);
+        throw new Error(`Bulk API v2 ${importAction.action} job failed for object ${importAction.objectName}: ${jobStatus.errorMessage}`);
       }
 
       // 5. Process successful results

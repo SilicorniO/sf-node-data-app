@@ -57,14 +57,13 @@ export class ExecConfReader {
     }
 
     let importAction: ImportAction | undefined = undefined;
-    // Parse all fields as defined in ImportAction model
     if (
-      actionData?.importAction?.importName ||
-      actionData?.importAction?.uniqueColumnName ||
+      actionData?.importAction?.objectName ||
+      actionData?.importAction?.uniqueColumn ||
       actionData?.importAction?.action
     ) {
-      const importName = actionData.importAction.importName ?? null;
-      const uniqueColumnName = actionData.importAction.uniqueColumnName ?? null;
+      const objectName = actionData.importAction.objectName ?? null;
+      const uniqueColumn = actionData.importAction.uniqueColumn ?? null;
       const action = actionData.importAction.action ?? null;
       const importColumns = actionData.importAction.importColumns
         ? actionData.importAction.importColumns
@@ -72,15 +71,16 @@ export class ExecConfReader {
             .map((col: string) => col.trim())
             .filter((col: string) => col.length > 0)
         : [];
-      if (importName && action) {
-        importAction = new ImportAction(importName, uniqueColumnName, action, importColumns);
+      if (objectName && action) {
+        importAction = new ImportAction(objectName, uniqueColumn, action, importColumns);
       }
     }
 
     // Parse exportAction if present
     let exportAction: ExportAction | undefined = undefined;
     if (actionData?.exportAction?.query) {
-      exportAction = new ExportAction(actionData.exportAction.query);
+      const uniqueColumn = actionData.exportAction.uniqueColumn ?? undefined;
+      exportAction = new ExportAction(actionData.exportAction.query, uniqueColumn);
     }
 
     return new Action(name, waitStartingTime, transformAction, importAction, exportAction);
