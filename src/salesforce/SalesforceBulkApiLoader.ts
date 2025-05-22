@@ -270,10 +270,10 @@ export class SalesforceBulkApiLoader {
             dataRowIndex = dataMap.get(idFieldValue);
           } else {
             let keyValue = '';
-            if (indexIdField >= 0 && row.length > indexIdField + 2) {
-              keyValue = row[indexIdField + 2];
-            } else if (indexUniqueField >= 0 && row.length > indexUniqueField + 2) {
+            if (indexUniqueField >= 0 && row.length > indexUniqueField + 2) {
               keyValue = row[indexUniqueField + 2];
+            } else if (indexIdField >= 0 && row.length > indexIdField + 2) {
+              keyValue = row[indexIdField + 2];
             }
             dataRowIndex = dataMap.get(keyValue) ?? index;
           }
