@@ -125,13 +125,13 @@ export class DataSheetProcessor {
    * If uniqueColumnName is not found, secondary rows are appended at the end.
    * @param master The master DataSheet (takes precedence).
    * @param secondary The secondary DataSheet.
-   * @param uniqueColumnName The column name used to match rows.
+   * @param uniqueColumn The column name used to match rows.
    * @returns The merged DataSheet.
    */
   public static mergeDataSheets(
     master: DataSheet,
     secondary: DataSheet,
-    uniqueColumnName?: string
+    uniqueColumn?: string
   ): DataSheet {
     // Merge column names (preserve order: master first, then secondary unique columns)
     const allColumns = [...master.columnNames];
@@ -162,16 +162,16 @@ export class DataSheetProcessor {
 
     // If uniqueColumnName is not provided or not found, append secondary rows after master rows
     const masterUniqueIdx =
-      uniqueColumnName && masterColIndexMap[uniqueColumnName] !== undefined
-        ? masterColIndexMap[uniqueColumnName]
+      uniqueColumn && masterColIndexMap[uniqueColumn] !== undefined
+        ? masterColIndexMap[uniqueColumn]
         : -1;
     const secondaryUniqueIdx =
-      uniqueColumnName && secondaryColIndexMap[uniqueColumnName] !== undefined
-        ? secondaryColIndexMap[uniqueColumnName]
+      uniqueColumn && secondaryColIndexMap[uniqueColumn] !== undefined
+        ? secondaryColIndexMap[uniqueColumn]
         : -1;
 
     if (
-      !uniqueColumnName ||
+      !uniqueColumn ||
       masterUniqueIdx === -1 ||
       secondaryUniqueIdx === -1
     ) {
