@@ -9,9 +9,10 @@ export class CsvGenerator {
    * @param sheetsData A dictionary where the key is the sheet name and the value is the DataSheet object.
    * @param outputFolder The folder where the CSV files will be saved.
    */
-  static async generateCsvFiles(
-    sheetsData: { [sheetName: string]: DataSheet },
-    outputFolder: string
+  static async generateCsvFile(
+    dataSheet: DataSheet,
+    outputFolder: string,
+    fileName: string
   ): Promise<void> {
     try {
       // Ensure the output folder exists
@@ -19,21 +20,14 @@ export class CsvGenerator {
         fs.mkdirSync(outputFolder, { recursive: true });
       }
 
-      // Iterate through each DataSheet in the map and generate a CSV file
-      for (const sheetName in sheetsData) {
-        if (sheetsData.hasOwnProperty(sheetName)) {
-          const dataSheet = sheetsData[sheetName];
+      // Prepare the headers and data for the CSV
+      const csvContent = CsvProcessor.generateCSV(dataSheet.columnNames, dataSheet.data);
 
-          // Prepare the headers and data for the CSV
-          const csvContent = CsvProcessor.generateCSV(dataSheet.columnNames, dataSheet.data);
+      // Define the output file path
+      const outputFilePath = path.join(outputFolder, fileName);
 
-          // Define the output file path
-          const outputFilePath = path.join(outputFolder, `${sheetName}_output.csv`);
-
-          // Write the CSV content to the file
-          fs.writeFileSync(outputFilePath, csvContent, 'utf8');
-        }
-      }
+      // Write the CSV content to the file
+      fs.writeFileSync(outputFilePath, csvContent, 'utf8');
     } catch (error: any) {
       console.error('Error generating CSV files:', error.message);
       throw error;
