@@ -93,7 +93,6 @@ export class DataSheetProcessor {
 
       const lookupValue = lookupMap.get(value);
       if (lookupValue === undefined) {
-        console.warn(`Transformation value not found for \${${variable}}: "${value}"`);
         return value; // Return the original value if not found
       }
 
