@@ -5,7 +5,7 @@ import { DataSheet } from '../model/DataSheet';
 import { ImportAction, ActionType } from '../model/ImportAction';
 import { ExportAction } from '../model/ExportAction';
 
-const IMPORT_ID_LABEL = '_ImportId';
+const ID_COLUMN = 'Id';
 const ERROR_INSERT_MESSAGE_LABEL = '_ErrorInsertMessage';
 const ERROR_REMOVE_MESSAGE_LABEL = '_ErrorRemoveMessage';
 const CSV_LINE_ENDING = 'LF';
@@ -40,55 +40,64 @@ export class SalesforceBulkApiLoader {
    * Generates the CSV data and headers for the given operation.
    */
   private generateCsvPayload(
-  operation: ActionType,
-  dataSheet: DataSheet,
-  importAction: ImportAction
-): { headers: string[]; data: string[][] } {
-  if (operation === 'delete') {
-    // Only the Id field is needed for delete
+    operation: ActionType,
+    dataSheet: DataSheet,
+    importAction: ImportAction
+  ): { headers: string[]; data: string[][] } {
     const indexIdField = dataSheet.columnNames.findIndex(
-      (apiName) => apiName === importAction.idFieldName
+      (apiName) => apiName === ID_COLUMN
     );
-    if (indexIdField < 0) {
-      throw new Error(
-        `The object ${importAction.importName} doesn't have a valid idFieldName: '${importAction.idFieldName}'`
-      );
-    }
-    const deleteHeaders = ['Id'];
-    const deleteData = dataSheet.data
-      .map(row => [row[indexIdField]])
-      .filter(idArr => idArr[0]);
-    return { headers: deleteHeaders, data: deleteData };
-  } else {
-    // For insert, update, upsert: exclude columns with empty columnNames
-    const validIndexes: number[] = [];
-    const headers: string[] = [];
-    dataSheet.columnNames.forEach((col, idx) => {
-      if (col && col.trim() !== '') {
-        validIndexes.push(idx);
-        headers.push(col);
+
+    if (operation === 'delete') {
+      // Only the Id field is needed for delete
+      if (indexIdField < 0) {
+        throw new Error(
+          `The object ${importAction.importName} doesn't have a column '${ID_COLUMN}'`
+        );
       }
-    });
+      const deleteHeaders = [ID_COLUMN];
+      const deleteData = dataSheet.data
+        .map(row => [row[indexIdField]])
+        .filter(idArr => idArr[0]);
+      return { headers: deleteHeaders, data: deleteData };
+    } else {
+      // For insert, update, upsert: use importColumns if set and has more than one column, else use all columns
+      let validIndexes: number[] = [];
+      let headers: string[] = [];
 
-    let filteredData = dataSheet.data.map(row => validIndexes.map(idx => row[idx]));
-
-    // Exclude data rows with an Id field when action is "insert"
-    if (operation === 'insert') {
-      const indexUniqueField = dataSheet.columnNames.findIndex(
-        (apiName) => apiName === importAction.idFieldName
-      );
-      if (indexUniqueField !== -1) {
-        filteredData = filteredData.filter((row, i) => {
-          // Find the original row index in dataSheet.data
-          const originalRow = dataSheet.data[i];
-          return !originalRow[indexUniqueField];
+      if (importAction.importColumns && importAction.importColumns.length > 1) {
+        importAction.importColumns.forEach(col => {
+          const idx = dataSheet.columnNames.indexOf(col);
+          if (idx !== -1) {
+            validIndexes.push(idx);
+            headers.push(col);
+          }
+        });
+      } else {
+        dataSheet.columnNames.forEach((col, idx) => {
+          if (col && col.trim() !== '') {
+            validIndexes.push(idx);
+            headers.push(col);
+          }
         });
       }
-    }
 
-    return { headers, data: filteredData };
+      let filteredData = dataSheet.data.map(row => validIndexes.map(idx => row[idx]));
+
+      // Exclude data rows with an Id field when action is "insert"
+      if (operation === 'insert') {
+        if (indexIdField !== -1) {
+          filteredData = filteredData.filter((row, i) => {
+            // Find the original row index in dataSheet.data
+            const originalRow = dataSheet.data[i];
+            return !originalRow[indexIdField];
+          });
+        }
+      }
+
+      return { headers, data: filteredData };
+    }
   }
-}
 
   /**
    * Loads data into Salesforce using Bulk API v2 for insert, update, upsert, or delete.
@@ -112,20 +121,17 @@ export class SalesforceBulkApiLoader {
       const { headers, data } = this.generateCsvPayload(importAction.action, dataSheet, importAction);
 
       // For insert, update, upsert: we need a unique field or id field to map results
+      let indexIdField = dataSheet.columnNames.findIndex(
+        (apiName) => apiName === ID_COLUMN
+      );
       let indexUniqueField = -1;
-      let indexIdField = -1;
-      if (importAction.idFieldName) {
-        indexIdField = dataSheet.columnNames.findIndex(
-          (apiName) => apiName === importAction.idFieldName
-        );
-      }
-      if (importAction.uniqueFieldName) {
+      if (importAction.uniqueColumnName) {
         indexUniqueField = dataSheet.columnNames.findIndex(
-          (apiName) => apiName === importAction.uniqueFieldName
+          (apiName) => apiName === importAction.uniqueColumnName
         );
       }
       if (indexUniqueField == -1 && indexIdField == -1) {
-        console.info(`The object ${importAction.importName} hasn't got a valid idFieldName or uniqueFieldName, so Ids and errors will be recovered in order.`);
+        console.info(`The object ${importAction.importName} hasn't got a valid idFieldName or uniqueColumnName, so Ids and errors will be recovered in order.`);
       }
 
       // Generate a map of data based on the unique field or id field
@@ -147,8 +153,8 @@ export class SalesforceBulkApiLoader {
         contentType: 'CSV',
         lineEnding: CSV_LINE_ENDING,
       };
-      if (importAction.action === 'upsert' && importAction.uniqueFieldName) {
-        jobRequest.externalIdFieldName = importAction.uniqueFieldName;
+      if (importAction.action === 'upsert' && importAction.uniqueColumnName) {
+        jobRequest.externalIdFieldName = importAction.uniqueColumnName;
       }
       const jobResponse = await axiosInstance.post('/jobs/ingest', jobRequest);
 
@@ -199,13 +205,15 @@ export class SalesforceBulkApiLoader {
 
       // 5. Process successful results
       if (importAction.action == "insert" && jobStatus.numberRecordsProcessed > 0) {
-        // generate column for Id
-        const indexColumnId = dataSheet.headerNames.length;
-        dataSheet.headerNames.push(IMPORT_ID_LABEL);
-        dataSheet.columnNames.push(IMPORT_ID_LABEL);
-        dataSheet.data.forEach((row) => {
-          row.push(''); // Placeholder for Id
-        });
+        // generate column for Id if not exist
+        if (indexIdField < 0) {
+          indexIdField = dataSheet.headerNames.length;
+          dataSheet.headerNames.push(ID_COLUMN);
+          dataSheet.columnNames.push(ID_COLUMN);
+          dataSheet.data.forEach((row) => {
+            row.push(''); // Placeholder for Id
+          });
+        }
 
         const successfulResults = await axiosInstance.get(
           `/jobs/ingest/${jobId}/successfulResults`,
@@ -220,9 +228,10 @@ export class SalesforceBulkApiLoader {
           } else if (indexUniqueField >= 0 && row.length > indexUniqueField + 2) {
             keyValue = row[indexUniqueField + 2];
           }
+          // Setthe Id in the Id field if exist
           const dataRowIndex = dataMap.get(keyValue) ?? index;
           if (dataRowIndex !== undefined) {
-            dataSheet.data[dataRowIndex][indexColumnId] = row[0]; // Set Id
+            dataSheet.data[dataRowIndex][indexIdField] = row[0]; // Set Id
           }
         });
       }

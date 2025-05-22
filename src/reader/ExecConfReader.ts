@@ -60,16 +60,17 @@ export class ExecConfReader {
     // Parse all fields as defined in ImportAction model
     if (
       actionData?.importAction?.importName ||
-      actionData?.importAction?.uniqueFieldName ||
-      actionData?.importAction?.idFieldName ||
+      actionData?.importAction?.uniqueColumnName ||
       actionData?.importAction?.action
     ) {
       const importName = actionData.importAction.importName ?? null;
-      const uniqueFieldName = actionData.importAction.uniqueFieldName ?? null;
-      const idFieldName = actionData.importAction.idFieldName ?? null;
+      const uniqueColumnName = actionData.importAction.uniqueColumnName ?? null;
       const action = actionData.importAction.action ?? null;
+      const importColumns = Array.isArray(actionData.importAction.importColumns)
+        ? actionData.importAction.importColumns
+        : [];
       if (importName && action) {
-        importAction = new ImportAction(importName, uniqueFieldName, idFieldName, action);
+        importAction = new ImportAction(importName, uniqueColumnName, action, importColumns);
       }
     }
 
