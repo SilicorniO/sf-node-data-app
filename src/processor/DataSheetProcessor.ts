@@ -97,11 +97,16 @@ export class DataSheetProcessor {
         return value; // Return the original value if not found
       }
 
-      // Replace the variable in the transformation string with the looked-up value (as a string literal)
-      translatedTransformation = translatedTransformation.replace(
-        match[0],
-        `'${lookupValue}'`
-      );
+      // Replace the variable in the transformation string with the looked-up value
+      // If the match is the entire transformation, wrap in quotes
+      if (translatedTransformation.trim() === match[0]) {
+        translatedTransformation = `'${lookupValue}'`;
+      } else {
+        translatedTransformation = translatedTransformation.replace(
+          match[0],
+          `${lookupValue}`
+        );
+      }
     }
 
     // Evaluate the translated transformation
