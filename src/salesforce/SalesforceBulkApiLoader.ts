@@ -85,14 +85,8 @@ export class SalesforceBulkApiLoader {
       let filteredData = dataSheet.data.map(row => validIndexes.map(idx => row[idx]));
 
       // Exclude data rows with an Id field when action is "insert"
-      if (operation === 'insert') {
-        if (indexIdField !== -1) {
-          filteredData = filteredData.filter((row, i) => {
-            // Find the original row index in dataSheet.data
-            const originalRow = dataSheet.data[i];
-            return !originalRow[indexIdField];
-          });
-        }
+      if (operation === 'insert' && indexIdField >= 0) {
+        filteredData = filteredData.filter(row => !row[indexIdField]);
       }
 
       return { headers, data: filteredData };
@@ -142,13 +136,13 @@ export class SalesforceBulkApiLoader {
 
       // Generate a map of data based on the unique field or id field
       const dataMap = new Map<string, number>();
-      if (indexIdField >= 0) {
-        dataSheet.data.forEach((_row, index) => {
-          dataMap.set(dataSheet.data[index][indexIdField], index);
-        });
-      } else if (indexUniqueField >= 0) {
+      if (indexUniqueField >= 0) {
         dataSheet.data.forEach((_row, index) => {
           dataMap.set(dataSheet.data[index][indexUniqueField], index);
+        });
+      } else if (indexIdField >= 0) {
+        dataSheet.data.forEach((_row, index) => {
+          dataMap.set(dataSheet.data[index][indexIdField], index);
         });
       }
 
@@ -275,7 +269,12 @@ export class SalesforceBulkApiLoader {
             } else if (indexIdField >= 0 && row.length > indexIdField + 2) {
               keyValue = row[indexIdField + 2];
             }
-            dataRowIndex = dataMap.get(keyValue) ?? index;
+            if (keyValue !== '') {
+              dataRowIndex = dataMap.get(keyValue) ?? index;
+            } else {
+              dataRowIndex = index;
+            }
+            // check we have a valid index
           }
           if (dataRowIndex !== undefined) {
             dataSheet.data[dataRowIndex][indexColumnErrorMessage] = row[1]; // The error message is in the second column
@@ -285,7 +284,7 @@ export class SalesforceBulkApiLoader {
 
       return jobStatus.numberRecordsFailed == 0;
     } catch (error: any) {
-      throw new Error(`Error during Bulk API v2 ${importAction.action} operation: ${error.message}`);
+      throw new Error(`Error during Bulk API v2 ${importAction.action} operation: ${error.message} (Check the import configuration for this action)`);
     }
   }
 
