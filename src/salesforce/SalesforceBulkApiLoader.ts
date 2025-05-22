@@ -120,6 +120,12 @@ export class SalesforceBulkApiLoader {
       // Prepare CSV payload
       const { headers, data } = this.generateCsvPayload(importAction.action, dataSheet, importAction);
 
+      // If there is nodata to load we return
+      if (data.length === 0) {
+        console.info(`No data to import for ${dataSheet.name}.`);
+        return true;
+      }
+
       // For insert, update, upsert: we need a unique field or id field to map results
       let indexIdField = dataSheet.columnNames.findIndex(
         (apiName) => apiName === ID_COLUMN
