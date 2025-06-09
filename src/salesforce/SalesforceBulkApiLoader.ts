@@ -66,11 +66,17 @@ export class SalesforceBulkApiLoader {
       let headers: string[] = [];
 
       if (importAction.importFields && importAction.importFields.length > 1) {
+        // We include Id field if was found
+        if (indexIdField >= 0) {
+          validIndexes.push(indexIdField);
+          headers.push(ID_COLUMN);
+        }
+        
         importAction.importFields.forEach(importField => {
-          const idx = dataSheet.fieldNames.indexOf(importField.name);
+          const idx = dataSheet.fieldNames.indexOf(importField);
           if (idx !== -1) {
             validIndexes.push(idx);
-            headers.push(importField.apiName);
+            headers.push(importField);
           }
         });
       } else {
@@ -82,12 +88,13 @@ export class SalesforceBulkApiLoader {
         });
       }
 
-      let filteredData = dataSheet.data.map(row => validIndexes.map(idx => row[idx]));
-
       // Exclude data rows with an Id field when action is "insert"
+      let filteredData = dataSheet.data
       if (operation === 'insert' && indexIdField >= 0) {
         filteredData = filteredData.filter(row => !row[indexIdField]);
       }
+
+      filteredData = filteredData.map(row => validIndexes.map(idx => row[idx]));
 
       return { headers, data: filteredData };
     }

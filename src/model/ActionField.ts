@@ -1,4 +1,4 @@
-export class ImportFieldConf {
+export class ActionField {
   name: string;
   apiName: string;
   constructor(name: string, apiName: string) {

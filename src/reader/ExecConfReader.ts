@@ -8,7 +8,7 @@ import { ImportAction } from '../model/ImportAction';
 import { ExportAction } from '../model/ExportAction';
 import { AppConfiguration } from '../model/AppConfiguration';
 import { ExecConf } from '../model/ExecConf';
-import { ImportFieldConf } from '../model/ImportFieldConf';
+import { ActionField } from '../model/ActionField';
 
 export class ExecConfReader {
   static readConfFile(confFilePath: string): ExecConf {
@@ -58,6 +58,7 @@ export class ExecConfReader {
     }
 
     let importAction: ImportAction | undefined = undefined;
+    let fields: ActionField[] = [];
     if (
       actionData?.importAction?.objectName ||
       actionData?.importAction?.uniqueField ||
@@ -67,19 +68,28 @@ export class ExecConfReader {
       const uniqueField = actionData.importAction.uniqueField ?? null;
       const action = actionData.importAction.action ?? null;
 
-      // Parse importFields as array of ImportFieldConf objects
-      let importFields: ImportFieldConf[] = [];
+      // Parse importFields as array of strings for ImportAction
+      let importFields: string[] = [];
       if (Array.isArray(actionData.importAction.importFields)) {
-        importFields = actionData.importAction.importFields.map((field: any) => {
-          const name = field?.name ?? '';
-          const apiName = field?.apiName ?? name;
-          return new ImportFieldConf(name, apiName);
-        });
+        importFields = actionData.importAction.importFields.map((field: any) =>
+          typeof field === 'string'
+            ? field
+            : (field?.name ?? '')
+        ).filter((field: string) => field.length > 0);
       }
 
       if (objectName && action) {
         importAction = new ImportAction(objectName, uniqueField, action, importFields);
       }
+    }
+
+    // Parse fields for Action (array of ActionField)
+    if (Array.isArray(actionData.fields)) {
+      fields = actionData.fields.map((field: any) => {
+        const name = field?.name ?? '';
+        const apiName = field?.apiName ?? name;
+        return new ActionField(name, apiName);
+      });
     }
 
     // Parse exportAction if present
@@ -89,7 +99,7 @@ export class ExecConfReader {
       exportAction = new ExportAction(actionData.exportAction.query, uniqueField);
     }
 
-    return new Action(name, waitStartingTime, transformAction, importAction, exportAction);
+    return new Action(name, waitStartingTime, transformAction, importAction, exportAction, fields);
   }
 
   private static parseFieldsConf(fieldsConfData: any[]): TransformFieldConf[] {

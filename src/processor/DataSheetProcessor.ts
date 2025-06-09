@@ -1,3 +1,4 @@
+import { ActionField } from '../model/ActionField';
 import { DataSheet } from '../model/DataSheet';
 import { TransformAction } from '../model/TransformAction';
 
@@ -244,4 +245,29 @@ export class DataSheetProcessor {
       data: mergedData,
     };
   }
+  
+  /**
+   * Translates the fieldNames of a DataSheet from name to apiName using the provided ActionField array.
+   * Modifies the DataSheet in place.
+   */
+  public static translateFieldNamesToApiNames(dataSheet: DataSheet, actionFields: ActionField[]): void {
+    const nameToApiName: { [name: string]: string } = {};
+    actionFields.forEach(field => {
+      nameToApiName[field.name] = field.apiName;
+    });
+    dataSheet.fieldNames = dataSheet.fieldNames.map(name => nameToApiName[name] ?? name);
+  }
+
+  /**
+   * Translates the fieldNames of a DataSheet from apiName to name using the provided ActionField array.
+   * Modifies the DataSheet in place.
+   */
+  public static translateApiNamesToFieldNames(dataSheet: DataSheet, actionFields: ActionField[]): void {
+    const apiNameToName: { [apiName: string]: string } = {};
+    actionFields.forEach(field => {
+      apiNameToName[field.apiName] = field.name;
+    });
+    dataSheet.fieldNames = dataSheet.fieldNames.map(apiName => apiNameToName[apiName] ?? apiName);
+  }
+
 }

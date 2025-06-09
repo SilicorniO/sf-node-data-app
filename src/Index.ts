@@ -9,6 +9,7 @@ import { ExcelGenerator } from './generator/ExcelGenerator';
 import { CsvReader } from './reader/CsvReader';
 import { CsvGenerator } from './generator/CsvGenerator';
 import { ActionProcessor } from './processor/ActionProcessor';
+import { DataSheetProcessor } from './processor/DataSheetProcessor';
 
 const EXCEL_FILE_SUFFIX = '_results.xlsx';
 const CSV_FILE_SUFFIX = '_results.csv';
@@ -51,8 +52,24 @@ async function main() {
       process.env.SF_INSTANCE_URL!
     );
 
+    // For each action, translate field names to apiNames in sheetsData
+    for (const action of execConf.actions) {
+      const sheet = sheetsData[action.name];
+      if (sheet != null) {
+        DataSheetProcessor.translateFieldNamesToApiNames(sheet, action.fields);
+      }
+    }
+
     // processactions
     await ActionProcessor.processActions(execConf.actions, sheetsData, execConf);
+
+    // Translate fields from sheets apiNames
+    for (const action of execConf.actions) {
+      const sheet = sheetsData[action.name];
+      if (sheet != null) {
+        DataSheetProcessor.translateApiNamesToFieldNames(sheet, action.fields);
+      }
+    }
 
     // generate excelfile
     if (excelFilePath != null) {

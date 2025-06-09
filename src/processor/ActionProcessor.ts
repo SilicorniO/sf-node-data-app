@@ -41,6 +41,7 @@ export class ActionProcessor {
             action.exportAction,
             sheetName
           );
+
           // If sheet doesn't exist, create it
           if (!sheetsData[sheetName]) {
             sheetsData[sheetName] = exportDataSheet;
