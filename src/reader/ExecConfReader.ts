@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
-import { FieldConf } from '../model/FieldConf';
+import { TransformFieldConf } from '../model/TransformFieldConf';
 import { Action } from '../model/Action';
 import { TransformAction } from '../model/TransformAction';
 import { ImportAction } from '../model/ImportAction';
@@ -86,16 +86,16 @@ export class ExecConfReader {
     return new Action(name, waitStartingTime, transformAction, importAction, exportAction);
   }
 
-  private static parseFieldsConf(fieldsConfData: any[]): FieldConf[] {
+  private static parseFieldsConf(fieldsConfData: any[]): TransformFieldConf[] {
     if (!Array.isArray(fieldsConfData)) {
       return [];
     }
     return fieldsConfData.map(fieldConfData => this.parseFieldConf(fieldConfData));
   }
 
-  private static parseFieldConf(fieldConfData: any): FieldConf {
-    const fieldName = fieldConfData?.fieldName ?? null;
+  private static parseFieldConf(fieldConfData: any): TransformFieldConf {
+    const name = fieldConfData?.name ?? null;
     const transformation = fieldConfData?.transformation ?? null;
-    return new FieldConf(fieldName, transformation);
+    return new TransformFieldConf(name, transformation);
   }
 }

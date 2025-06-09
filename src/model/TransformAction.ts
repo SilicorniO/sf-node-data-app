@@ -1,8 +1,8 @@
-import { FieldConf } from "./FieldConf";
+import { TransformFieldConf } from "./TransformFieldConf";
 
 export class TransformAction {
-  fieldsConf: FieldConf[];
-  constructor(fieldsConf: FieldConf[]) {
+  fieldsConf: TransformFieldConf[];
+  constructor(fieldsConf: TransformFieldConf[]) {
     this.fieldsConf = fieldsConf;
   }
 }

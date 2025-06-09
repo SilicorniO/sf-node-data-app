@@ -17,7 +17,7 @@ export class DataSheetProcessor {
     const fieldTransformations = [];
     for (const fieldConf of transformAction.fieldsConf) {
       if (fieldConf.transformation && fieldConf.transformation.trim() !== '') {
-        const fieldIndex = dataSheet.columnNames.indexOf(fieldConf.fieldName);
+        const fieldIndex = dataSheet.columnNames.indexOf(fieldConf.name);
         if (fieldIndex !== -1) {
           fieldTransformations.push({
             fieldIndex,
