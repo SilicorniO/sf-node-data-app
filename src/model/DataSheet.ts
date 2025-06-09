@@ -2,6 +2,6 @@
 
 export interface DataSheet {
   name: string;
-  columnNames: string[];
+  fieldNames: string[];
   data: string[][];
 }

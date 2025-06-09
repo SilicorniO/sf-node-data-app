@@ -23,7 +23,7 @@ export class ExcelGenerator {
           const worksheetData: (string | undefined)[][] = [];
 
           // Add API names
-          worksheetData.push(dataSheet.columnNames);
+          worksheetData.push(dataSheet.fieldNames);
 
           // Add the data rows
           worksheetData.push(...dataSheet.data);

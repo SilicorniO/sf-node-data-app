@@ -17,7 +17,7 @@ export class DataSheetProcessor {
     const fieldTransformations = [];
     for (const fieldConf of transformAction.fieldsConf) {
       if (fieldConf.transformation && fieldConf.transformation.trim() !== '') {
-        const fieldIndex = dataSheet.columnNames.indexOf(fieldConf.name);
+        const fieldIndex = dataSheet.fieldNames.indexOf(fieldConf.name);
         if (fieldIndex !== -1) {
           fieldTransformations.push({
             fieldIndex,
@@ -78,8 +78,8 @@ export class DataSheetProcessor {
         throw new Error(`Sheet "${sheetName}" not found in sheetsData.`);
       }
 
-      const apiNameIndex = targetSheet.columnNames.indexOf(apiName);
-      const targetColumnIndex = targetSheet.columnNames.indexOf(targetColumn);
+      const apiNameIndex = targetSheet.fieldNames.indexOf(apiName);
+      const targetColumnIndex = targetSheet.fieldNames.indexOf(targetColumn);
 
       if (apiNameIndex === -1 || targetColumnIndex === -1) {
         throw new Error(`Invalid column references in variable: \${${variable}}`);
@@ -134,8 +134,8 @@ export class DataSheetProcessor {
     uniqueColumn?: string
   ): DataSheet {
     // Merge column names (preserve order: master first, then secondary unique columns)
-    const allColumns = [...master.columnNames];
-    secondary.columnNames.forEach((col) => {
+    const allColumns = [...master.fieldNames];
+    secondary.fieldNames.forEach((col) => {
       if (!allColumns.includes(col)) {
         allColumns.push(col);
       }
@@ -143,11 +143,11 @@ export class DataSheetProcessor {
 
     // Create maps for column name to index for master and secondary
     const masterColIndexMap: { [col: string]: number } = {};
-    master.columnNames.forEach((col, idx) => {
+    master.fieldNames.forEach((col, idx) => {
       masterColIndexMap[col] = idx;
     });
     const secondaryColIndexMap: { [col: string]: number } = {};
-    secondary.columnNames.forEach((col, idx) => {
+    secondary.fieldNames.forEach((col, idx) => {
       secondaryColIndexMap[col] = idx;
     });
 
@@ -178,7 +178,7 @@ export class DataSheetProcessor {
       }
       return {
         name: master.name,
-        columnNames: allColumns,
+        fieldNames: allColumns,
         data: mergedData,
       };
     }
@@ -240,7 +240,7 @@ export class DataSheetProcessor {
 
     return {
       name: master.name,
-      columnNames: allColumns,
+      fieldNames: allColumns,
       data: mergedData,
     };
   }

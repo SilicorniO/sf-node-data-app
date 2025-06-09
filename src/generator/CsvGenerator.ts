@@ -21,7 +21,7 @@ export class CsvGenerator {
       }
 
       // Prepare the headers and data for the CSV
-      const csvContent = CsvProcessor.generateCSV(dataSheet.columnNames, dataSheet.data);
+      const csvContent = CsvProcessor.generateCSV(dataSheet.fieldNames, dataSheet.data);
 
       // Define the output file path
       const outputFilePath = path.join(outputFolder, fileName);

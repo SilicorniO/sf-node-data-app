@@ -20,12 +20,12 @@ export class ExcelReader {
           continue;
         }
 
-        const columnNames: string[] = [];
+        const fieldNames: string[] = [];
 
         for (let C = 0; C < numCols; ++C) {
           const firstRowAddress = XLSX.utils.encode_cell({ r: 0, c: C });
           const firstRowValue = worksheet[firstRowAddress]?.v as string || '';
-          columnNames.push(firstRowValue);
+          fieldNames.push(firstRowValue);
         }
 
         const data: string[][] = [];
@@ -50,7 +50,7 @@ export class ExcelReader {
 
         sheetsData[sheetName] = {
           name: sheetName,
-          columnNames: columnNames,
+          fieldNames: fieldNames,
           data: data,
         };
       }

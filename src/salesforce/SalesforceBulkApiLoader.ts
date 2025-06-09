@@ -44,7 +44,7 @@ export class SalesforceBulkApiLoader {
     dataSheet: DataSheet,
     importAction: ImportAction
   ): { headers: string[]; data: string[][] } {
-    const indexIdField = dataSheet.columnNames.findIndex(
+    const indexIdField = dataSheet.fieldNames.findIndex(
       (apiName) => apiName === ID_COLUMN
     );
 
@@ -67,14 +67,14 @@ export class SalesforceBulkApiLoader {
 
       if (importAction.importFields && importAction.importFields.length > 1) {
         importAction.importFields.forEach(importField => {
-          const idx = dataSheet.columnNames.indexOf(importField.name);
+          const idx = dataSheet.fieldNames.indexOf(importField.name);
           if (idx !== -1) {
             validIndexes.push(idx);
             headers.push(importField.apiName);
           }
         });
       } else {
-        dataSheet.columnNames.forEach((col, idx) => {
+        dataSheet.fieldNames.forEach((col, idx) => {
           if (col && col.trim() !== '') {
             validIndexes.push(idx);
             headers.push(col);
@@ -121,12 +121,12 @@ export class SalesforceBulkApiLoader {
       }
 
       // For insert, update, upsert: we need a unique field or id field to map results
-      let indexIdField = dataSheet.columnNames.findIndex(
+      let indexIdField = dataSheet.fieldNames.findIndex(
         (apiName) => apiName === ID_COLUMN
       );
       let indexUniqueField = -1;
       if (importAction.uniqueField) {
-        indexUniqueField = dataSheet.columnNames.findIndex(
+        indexUniqueField = dataSheet.fieldNames.findIndex(
           (apiName) => apiName === importAction.uniqueField
         );
       }
@@ -207,8 +207,8 @@ export class SalesforceBulkApiLoader {
       if (importAction.action == "insert" && jobStatus.numberRecordsProcessed > 0) {
         // generate column for Id if not exist
         if (indexIdField < 0) {
-          indexIdField = dataSheet.columnNames.length;
-          dataSheet.columnNames.push(ID_COLUMN);
+          indexIdField = dataSheet.fieldNames.length;
+          dataSheet.fieldNames.push(ID_COLUMN);
           dataSheet.data.forEach((row) => {
             row.push(''); // Placeholder for Id
           });
@@ -238,11 +238,11 @@ export class SalesforceBulkApiLoader {
       // 6. Process failed results
       let indexColumnErrorMessage;
       if (importAction.action == "delete") {
-        indexColumnErrorMessage = dataSheet.columnNames.length;
-        dataSheet.columnNames.push(ERROR_REMOVE_MESSAGE_LABEL);
+        indexColumnErrorMessage = dataSheet.fieldNames.length;
+        dataSheet.fieldNames.push(ERROR_REMOVE_MESSAGE_LABEL);
       } else {
-        indexColumnErrorMessage = dataSheet.columnNames.length;
-        dataSheet.columnNames.push(ERROR_INSERT_MESSAGE_LABEL);
+        indexColumnErrorMessage = dataSheet.fieldNames.length;
+        dataSheet.fieldNames.push(ERROR_INSERT_MESSAGE_LABEL);
       }
       dataSheet.data.forEach((row) => {
         row.push('');
@@ -348,12 +348,12 @@ export class SalesforceBulkApiLoader {
 
     // 4. Parse CSV to DataSheet
     const parsed = CsvProcessor.parseCSV(csvString);
-    const columnNames = parsed.headers;
+    const fieldNames = parsed.headers;
     const data = parsed.data;
 
     const dataSheet: DataSheet = {
       name,
-      columnNames,
+      fieldNames: fieldNames,
       data,
     };
 
