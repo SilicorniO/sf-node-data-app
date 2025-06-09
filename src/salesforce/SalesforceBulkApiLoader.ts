@@ -125,9 +125,9 @@ export class SalesforceBulkApiLoader {
         (apiName) => apiName === ID_COLUMN
       );
       let indexUniqueField = -1;
-      if (importAction.uniqueColumn) {
+      if (importAction.uniqueField) {
         indexUniqueField = dataSheet.columnNames.findIndex(
-          (apiName) => apiName === importAction.uniqueColumn
+          (apiName) => apiName === importAction.uniqueField
         );
       }
       if (indexUniqueField == -1 && indexIdField == -1) {
@@ -153,8 +153,8 @@ export class SalesforceBulkApiLoader {
         contentType: 'CSV',
         lineEnding: CSV_LINE_ENDING,
       };
-      if (importAction.action === 'upsert' && importAction.uniqueColumn) {
-        jobRequest.externalIdFieldName = importAction.uniqueColumn;
+      if (importAction.action === 'upsert' && importAction.uniqueField) {
+        jobRequest.externalIdFieldName = importAction.uniqueField;
       }
       const jobResponse = await axiosInstance.post('/jobs/ingest', jobRequest);
 

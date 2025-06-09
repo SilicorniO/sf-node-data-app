@@ -63,7 +63,7 @@ export class ExecConfReader {
       actionData?.importAction?.action
     ) {
       const objectName = actionData.importAction.objectName ?? null;
-      const uniqueColumn = actionData.importAction.uniqueColumn ?? null;
+      const uniqueField = actionData.importAction.uniqueField ?? null;
       const action = actionData.importAction.action ?? null;
       const importColumns = actionData.importAction.importColumns
         ? actionData.importAction.importColumns
@@ -72,7 +72,7 @@ export class ExecConfReader {
             .filter((col: string) => col.length > 0)
         : [];
       if (objectName && action) {
-        importAction = new ImportAction(objectName, uniqueColumn, action, importColumns);
+        importAction = new ImportAction(objectName, uniqueField, action, importColumns);
       }
     }
 
