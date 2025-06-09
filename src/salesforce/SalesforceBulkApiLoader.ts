@@ -45,7 +45,7 @@ export class SalesforceBulkApiLoader {
     importAction: ImportAction
   ): { headers: string[]; data: string[][] } {
     const indexIdField = dataSheet.fieldNames.findIndex(
-      (apiName) => apiName === ID_COLUMN
+      (fieldName) => fieldName === ID_COLUMN
     );
 
     if (operation === 'delete') {

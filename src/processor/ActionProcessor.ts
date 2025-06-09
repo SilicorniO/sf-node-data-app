@@ -99,12 +99,7 @@ export class ActionProcessor {
 
           // Load data using Bulk API v2
           const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
-          let executionOk;
-          if (action.importAction.action == "insert") {
-            executionOk = await apiBulkLoader.bulkApiOperation(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
-          } else if (action.importAction.action == "delete") {
-            executionOk = await apiBulkLoader.bulkApiOperation(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
-          }
+          let executionOk = await apiBulkLoader.bulkApiOperation(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
           console.log(`Data loading for sheet "${sheetName}" completed.`);
 
           if (!executionOk && execConf.appConfiguration.stopOnError) {
