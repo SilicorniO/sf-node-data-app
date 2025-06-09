@@ -1,9 +1,9 @@
 export class ExportAction {
   query: string;
-  uniqueColumn?: string;
+  uniqueField?: string;
 
-  constructor(query: string, uniqueColumn?: string) {
+  constructor(query: string, uniqueField?: string) {
     this.query = query;
-    this.uniqueColumn = uniqueColumn;
+    this.uniqueField = uniqueField;
   }
 }

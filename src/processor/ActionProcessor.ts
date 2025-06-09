@@ -46,7 +46,7 @@ export class ActionProcessor {
             sheetsData[sheetName] = exportDataSheet;
           } else {
             // Merge the new data with the existing DataSheet
-            sheetsData[sheetName] = DataSheetProcessor.mergeDataSheets(exportDataSheet, sheetsData[sheetName], action.exportAction.uniqueColumn);
+            sheetsData[sheetName] = DataSheetProcessor.mergeDataSheets(exportDataSheet, sheetsData[sheetName], action.exportAction.uniqueField);
           }
           console.log(`Exported data for "${sheetName}" loaded into sheetsData.`);
         } catch (error: any) {

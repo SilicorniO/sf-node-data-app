@@ -122,16 +122,16 @@ export class DataSheetProcessor {
    * Merges two DataSheets into one, matching rows by a unique field.
    * Columns with the same name are merged, and data from the master DataSheet
    * overrides data from the secondary DataSheet for the same row and column.
-   * If uniqueColumnName is not found, secondary rows are appended at the end.
+   * If uniqueFieldName is not found, secondary rows are appended at the end.
    * @param master The master DataSheet (takes precedence).
    * @param secondary The secondary DataSheet.
-   * @param uniqueColumn The column name used to match rows.
+   * @param uniqueField The column name used to match rows.
    * @returns The merged DataSheet.
    */
   public static mergeDataSheets(
     master: DataSheet,
     secondary: DataSheet,
-    uniqueColumn?: string
+    uniqueField?: string
   ): DataSheet {
     // Merge column names (preserve order: master first, then secondary unique columns)
     const allColumns = [...master.columnNames];
@@ -160,18 +160,18 @@ export class DataSheetProcessor {
       secondaryColIndexMap[col] = idx;
     });
 
-    // If uniqueColumnName is not provided or not found, append secondary rows after master rows
+    // If uniqueFieldName is not provided or not found, append secondary rows after master rows
     const masterUniqueIdx =
-      uniqueColumn && masterColIndexMap[uniqueColumn] !== undefined
-        ? masterColIndexMap[uniqueColumn]
+      uniqueField && masterColIndexMap[uniqueField] !== undefined
+        ? masterColIndexMap[uniqueField]
         : -1;
     const secondaryUniqueIdx =
-      uniqueColumn && secondaryColIndexMap[uniqueColumn] !== undefined
-        ? secondaryColIndexMap[uniqueColumn]
+      uniqueField && secondaryColIndexMap[uniqueField] !== undefined
+        ? secondaryColIndexMap[uniqueField]
         : -1;
 
     if (
-      !uniqueColumn ||
+      !uniqueField ||
       masterUniqueIdx === -1 ||
       secondaryUniqueIdx === -1
     ) {

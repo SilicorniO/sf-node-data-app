@@ -131,7 +131,7 @@ export class SalesforceBulkApiLoader {
         );
       }
       if (indexUniqueField == -1 && indexIdField == -1) {
-        console.info(`The object ${importAction.objectName} hasn't got a valid idFieldName or uniqueColumn, so Ids and errors will be recovered in order.`);
+        console.info(`The object ${importAction.objectName} hasn't got a valid idFieldName or uniqueField, so Ids and errors will be recovered in order.`);
       }
 
       // Generate a map of data based on the unique field or id field

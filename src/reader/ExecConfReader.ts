@@ -59,7 +59,7 @@ export class ExecConfReader {
     let importAction: ImportAction | undefined = undefined;
     if (
       actionData?.importAction?.objectName ||
-      actionData?.importAction?.uniqueColumn ||
+      actionData?.importAction?.uniqueField ||
       actionData?.importAction?.action
     ) {
       const objectName = actionData.importAction.objectName ?? null;
@@ -79,8 +79,8 @@ export class ExecConfReader {
     // Parse exportAction if present
     let exportAction: ExportAction | undefined = undefined;
     if (actionData?.exportAction?.query) {
-      const uniqueColumn = actionData.exportAction.uniqueColumn ?? undefined;
-      exportAction = new ExportAction(actionData.exportAction.query, uniqueColumn);
+      const uniqueField = actionData.exportAction.uniqueField ?? undefined;
+      exportAction = new ExportAction(actionData.exportAction.query, uniqueField);
     }
 
     return new Action(name, waitStartingTime, transformAction, importAction, exportAction);
