@@ -35,13 +35,11 @@ export class CsvReader {
 
         try {
           const { headers, data } = CsvProcessor.parseCSV(csvString);
-
-          const headerNames = [...headers];
+          const columnNames = [...headers];
 
           resolve({
             name: path.basename(filePath, path.extname(filePath)),
-            columnNames: headerNames,
-            headerNames: [...headers],
+            columnNames: columnNames,
             data: data,
           });
         } catch (error: any) {

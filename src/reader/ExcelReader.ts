@@ -3,7 +3,7 @@ import * as path from 'path';
 import { DataSheet } from '../model/DataSheet';
 
 export class ExcelReader {
-  static async readExcelFile(filePath: string, includeHeaderNames: boolean = false): Promise<{ [sheetName: string]: DataSheet }> {
+  static async readExcelFile(filePath: string): Promise<{ [sheetName: string]: DataSheet }> {
     try {
       const workbook = XLSX.readFile(path.resolve(filePath));
       const sheetsData: { [sheetName: string]: DataSheet } = {};
@@ -13,29 +13,19 @@ export class ExcelReader {
         const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
         const numCols = range.e.c + 1;
         const numRows = range.e.r + 1;
-        const startDataRow = includeHeaderNames ? 2 : 1;
+        const startDataRow = 1;
 
-        if (numRows < (includeHeaderNames ? 3 : 2)) {
-          console.warn(`Sheet "${sheetName}" is empty or has less than ${includeHeaderNames ? 'three' : 'two'} rows and will be skipped.`);
+        if (numRows < 2) {
+          console.warn(`Sheet "${sheetName}" is empty or has less than 'two' rows and will be skipped.`);
           continue;
         }
 
-        const headerNames: string[] = [];
         const columnNames: string[] = [];
 
         for (let C = 0; C < numCols; ++C) {
           const firstRowAddress = XLSX.utils.encode_cell({ r: 0, c: C });
-          const secondRowAddress = XLSX.utils.encode_cell({ r: 1, c: C });
           const firstRowValue = worksheet[firstRowAddress]?.v as string || '';
-          const secondRowValue = worksheet[secondRowAddress]?.v as string || '';
-
-          if (includeHeaderNames) {
-            headerNames.push(firstRowValue);
-            columnNames.push(secondRowValue);
-          } else {
-            headerNames.push(firstRowValue);
-            columnNames.push(firstRowValue);
-          }
+          columnNames.push(firstRowValue);
         }
 
         const data: string[][] = [];
@@ -60,7 +50,6 @@ export class ExcelReader {
 
         sheetsData[sheetName] = {
           name: sheetName,
-          headerNames: headerNames,
           columnNames: columnNames,
           data: data,
         };

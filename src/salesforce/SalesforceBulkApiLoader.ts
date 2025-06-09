@@ -66,11 +66,11 @@ export class SalesforceBulkApiLoader {
       let headers: string[] = [];
 
       if (importAction.importFields && importAction.importFields.length > 1) {
-        importAction.importFields.forEach(col => {
-          const idx = dataSheet.columnNames.indexOf(col);
+        importAction.importFields.forEach(importField => {
+          const idx = dataSheet.columnNames.indexOf(importField.name);
           if (idx !== -1) {
             validIndexes.push(idx);
-            headers.push(col);
+            headers.push(importField.apiName);
           }
         });
       } else {
@@ -207,8 +207,7 @@ export class SalesforceBulkApiLoader {
       if (importAction.action == "insert" && jobStatus.numberRecordsProcessed > 0) {
         // generate column for Id if not exist
         if (indexIdField < 0) {
-          indexIdField = dataSheet.headerNames.length;
-          dataSheet.headerNames.push(ID_COLUMN);
+          indexIdField = dataSheet.columnNames.length;
           dataSheet.columnNames.push(ID_COLUMN);
           dataSheet.data.forEach((row) => {
             row.push(''); // Placeholder for Id
@@ -239,12 +238,10 @@ export class SalesforceBulkApiLoader {
       // 6. Process failed results
       let indexColumnErrorMessage;
       if (importAction.action == "delete") {
-        indexColumnErrorMessage = dataSheet.headerNames.length;
-        dataSheet.headerNames.push(ERROR_REMOVE_MESSAGE_LABEL);
+        indexColumnErrorMessage = dataSheet.columnNames.length;
         dataSheet.columnNames.push(ERROR_REMOVE_MESSAGE_LABEL);
       } else {
-        indexColumnErrorMessage = dataSheet.headerNames.length;
-        dataSheet.headerNames.push(ERROR_INSERT_MESSAGE_LABEL);
+        indexColumnErrorMessage = dataSheet.columnNames.length;
         dataSheet.columnNames.push(ERROR_INSERT_MESSAGE_LABEL);
       }
       dataSheet.data.forEach((row) => {
@@ -351,13 +348,11 @@ export class SalesforceBulkApiLoader {
 
     // 4. Parse CSV to DataSheet
     const parsed = CsvProcessor.parseCSV(csvString);
-    const headerNames = parsed.headers;
     const columnNames = parsed.headers;
     const data = parsed.data;
 
     const dataSheet: DataSheet = {
       name,
-      headerNames,
       columnNames,
       data,
     };

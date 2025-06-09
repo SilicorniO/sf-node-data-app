@@ -7,12 +7,10 @@ export class ExcelGenerator {
    * Converts a map of DataSheet objects into an Excel file with multiple sheets and saves it to the specified path.
    * @param sheetsData A map where the key is the sheet name and the value is the DataSheet object.
    * @param filePath The path where the Excel file will be saved.
-   * @param includeHeaderNames Whether to include field names and API names in the Excel file.
    */
   static async generateExcelFile(
     sheetsData: { [sheetName: string]: DataSheet },
     filePath: string,
-    includeHeaderNames: boolean = false,
   ): Promise<void> {
     try {
       // Create a new workbook
@@ -23,11 +21,6 @@ export class ExcelGenerator {
         if (sheetsData.hasOwnProperty(sheetName)) {
           const dataSheet = sheetsData[sheetName];
           const worksheetData: (string | undefined)[][] = [];
-
-          // Add field names as the first row if includeHeaderNames is true
-          if (includeHeaderNames) {
-            worksheetData.push(dataSheet.headerNames);
-          }
 
           // Add API names
           worksheetData.push(dataSheet.columnNames);

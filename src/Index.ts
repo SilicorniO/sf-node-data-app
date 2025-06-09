@@ -22,14 +22,12 @@ async function main() {
     .requiredOption('-c, --confFile <path>', 'Path to the JSON configuration file')
     .option('-e, --excelFile <path>', 'Path to the Excel file')
     .option('-o, --outputFolder <path>', 'Path to the folder where output files will be created') // New parameter
-    .option('-h, --includeHeaderNames', 'Indicates that the Excel file has a header row with field names', false)
     .option('-v, --csvFiles <paths...>', 'Paths to the CSV files') // New parameter for CSV files
     .parse(process.argv);
 
   const excelFilePath = program.opts().excelFile;
   const confFilePath = program.opts().confFile;
   const outputFolder = program.opts().outputFolder || './'; // Default to current directory if not provided
-  const includeHeaderNames = program.opts().includeHeaderNames;
   const csvFiles = program.opts().csvFiles || []; // Get the CSV file paths
 
   try {
@@ -39,7 +37,7 @@ async function main() {
     let excelSheetsData: {[sheetName: string]: DataSheet} = {} 
     let csvSheetsData: {[sheetName: string]: DataSheet} = {}  
     if (excelFilePath != null) {
-      excelSheetsData = await ExcelReader.readExcelFile(excelFilePath, includeHeaderNames);
+      excelSheetsData = await ExcelReader.readExcelFile(excelFilePath);
     }
     if (csvFiles.length > 0) {
       csvSheetsData = await CsvReader.readCsvFiles(csvFiles);
@@ -73,8 +71,7 @@ async function main() {
       console.log(`Generating Excel file '${excelFileNameWithoutExtension}'`);
       await ExcelGenerator.generateExcelFile(
         filteredExcelSheetsData,
-        excelFilePathWithoutExtension,
-        includeHeaderNames
+        excelFilePathWithoutExtension
       );
     }
 

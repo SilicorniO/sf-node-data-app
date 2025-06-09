@@ -122,31 +122,22 @@ export class DataSheetProcessor {
    * Merges two DataSheets into one, matching rows by a unique field.
    * Columns with the same name are merged, and data from the master DataSheet
    * overrides data from the secondary DataSheet for the same row and column.
-   * If uniqueFieldName is not found, secondary rows are appended at the end.
+   * If uniqueColumn is not found, secondary rows are appended at the end.
    * @param master The master DataSheet (takes precedence).
    * @param secondary The secondary DataSheet.
-   * @param uniqueField The column name used to match rows.
+   * @param uniqueColumn The column name used to match rows.
    * @returns The merged DataSheet.
    */
   public static mergeDataSheets(
     master: DataSheet,
     secondary: DataSheet,
-    uniqueField?: string
+    uniqueColumn?: string
   ): DataSheet {
     // Merge column names (preserve order: master first, then secondary unique columns)
     const allColumns = [...master.columnNames];
-    const allHeaders = [...master.headerNames];
-    secondary.columnNames.forEach((col, index) => {
-      const allColumnsIndex = allColumns.indexOf(col);
-      if (allColumnsIndex === -1) {
+    secondary.columnNames.forEach((col) => {
+      if (!allColumns.includes(col)) {
         allColumns.push(col);
-        allHeaders.push(secondary.headerNames[index]);
-      } else if (
-        (allHeaders[allColumnsIndex] === '' ||
-          allHeaders[allColumnsIndex] === allColumns[allColumnsIndex]) &&
-        secondary.headerNames[index] !== ''
-      ) {
-        allHeaders[allColumnsIndex] = secondary.headerNames[index];
       }
     });
 
@@ -160,18 +151,18 @@ export class DataSheetProcessor {
       secondaryColIndexMap[col] = idx;
     });
 
-    // If uniqueFieldName is not provided or not found, append secondary rows after master rows
+    // If uniqueColumn is not provided or not found, append secondary rows after master rows
     const masterUniqueIdx =
-      uniqueField && masterColIndexMap[uniqueField] !== undefined
-        ? masterColIndexMap[uniqueField]
+      uniqueColumn && masterColIndexMap[uniqueColumn] !== undefined
+        ? masterColIndexMap[uniqueColumn]
         : -1;
     const secondaryUniqueIdx =
-      uniqueField && secondaryColIndexMap[uniqueField] !== undefined
-        ? secondaryColIndexMap[uniqueField]
+      uniqueColumn && secondaryColIndexMap[uniqueColumn] !== undefined
+        ? secondaryColIndexMap[uniqueColumn]
         : -1;
 
     if (
-      !uniqueField ||
+      !uniqueColumn ||
       masterUniqueIdx === -1 ||
       secondaryUniqueIdx === -1
     ) {
@@ -187,7 +178,6 @@ export class DataSheetProcessor {
       }
       return {
         name: master.name,
-        headerNames: allHeaders,
         columnNames: allColumns,
         data: mergedData,
       };
@@ -250,7 +240,6 @@ export class DataSheetProcessor {
 
     return {
       name: master.name,
-      headerNames: allHeaders,
       columnNames: allColumns,
       data: mergedData,
     };

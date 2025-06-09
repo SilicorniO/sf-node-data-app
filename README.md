@@ -21,7 +21,6 @@ You can run the app using `ts-node` (recommended for development) or compile it 
 - `-e, --excelFile <path>`: Path to the Excel file (optional)
 - `-v, --csvFiles <paths...>`: Paths to one or more CSV files (optional)
 - `-o, --outputFolder <path>`: Output folder for result files (default: `./`)
-- `-h, --includeHeaderNames`: Indicates that the Excel file has a header row with field names (default: false)
 
 ### Environment Variables
 
