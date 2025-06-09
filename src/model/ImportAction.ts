@@ -3,11 +3,11 @@ export class ImportAction {
   objectName:string;
   uniqueField: string;
   action: ActionType;
-  importColumns: string[];
-  constructor(objectName: string, uniqueField: string, action: ActionType, importColumns: string[]) {
+  importFields: string[];
+  constructor(objectName: string, uniqueField: string, action: ActionType, importFields: string[]) {
     this.objectName= objectName;
     this.uniqueField = uniqueField;
     this.action = action;
-    this.importColumns = importColumns;
+    this.importFields = importFields;
   }
 }

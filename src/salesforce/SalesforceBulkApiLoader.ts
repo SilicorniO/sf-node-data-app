@@ -61,12 +61,12 @@ export class SalesforceBulkApiLoader {
         .filter(idArr => idArr[0]);
       return { headers: deleteHeaders, data: deleteData };
     } else {
-      // For insert, update, upsert: use importColumns if set and has more than one column, else use all columns
+      // For insert, update, upsert: use importFields if set and has more than one column, else use all columns
       let validIndexes: number[] = [];
       let headers: string[] = [];
 
-      if (importAction.importColumns && importAction.importColumns.length > 1) {
-        importAction.importColumns.forEach(col => {
+      if (importAction.importFields && importAction.importFields.length > 1) {
+        importAction.importFields.forEach(col => {
           const idx = dataSheet.columnNames.indexOf(col);
           if (idx !== -1) {
             validIndexes.push(idx);

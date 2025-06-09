@@ -65,14 +65,14 @@ export class ExecConfReader {
       const objectName = actionData.importAction.objectName ?? null;
       const uniqueField = actionData.importAction.uniqueField ?? null;
       const action = actionData.importAction.action ?? null;
-      const importColumns = actionData.importAction.importColumns
-        ? actionData.importAction.importColumns
+      const importFields = actionData.importAction.importFields
+        ? actionData.importAction.importFields
             .split(',')
             .map((col: string) => col.trim())
             .filter((col: string) => col.length > 0)
         : [];
       if (objectName && action) {
-        importAction = new ImportAction(objectName, uniqueField, action, importColumns);
+        importAction = new ImportAction(objectName, uniqueField, action, importFields);
       }
     }
 
