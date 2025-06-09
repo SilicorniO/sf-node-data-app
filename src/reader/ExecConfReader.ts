@@ -8,6 +8,7 @@ import { ImportAction } from '../model/ImportAction';
 import { ExportAction } from '../model/ExportAction';
 import { AppConfiguration } from '../model/AppConfiguration';
 import { ExecConf } from '../model/ExecConf';
+import { ImportFieldConf } from '../model/ImportFieldConf';
 
 export class ExecConfReader {
   static readConfFile(confFilePath: string): ExecConf {
@@ -65,12 +66,17 @@ export class ExecConfReader {
       const objectName = actionData.importAction.objectName ?? null;
       const uniqueField = actionData.importAction.uniqueField ?? null;
       const action = actionData.importAction.action ?? null;
-      const importFields = actionData.importAction.importFields
-        ? actionData.importAction.importFields
-            .split(',')
-            .map((col: string) => col.trim())
-            .filter((col: string) => col.length > 0)
-        : [];
+
+      // Parse importFields as array of ImportFieldConf objects
+      let importFields: ImportFieldConf[] = [];
+      if (Array.isArray(actionData.importAction.importFields)) {
+        importFields = actionData.importAction.importFields.map((field: any) => {
+          const name = field?.name ?? '';
+          const apiName = field?.apiName ?? name;
+          return new ImportFieldConf(name, apiName);
+        });
+      }
+
       if (objectName && action) {
         importAction = new ImportAction(objectName, uniqueField, action, importFields);
       }
