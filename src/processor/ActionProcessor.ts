@@ -19,16 +19,17 @@ export class ActionProcessor {
     execConf: ExecConf
   ): Promise<void> {
     for (const action of actions) {
-      // wait startingtime of the action
       if (action.waitStartingTime > 0) {
         console.log(`Waiting ${action.waitStartingTime} ms before processing action "${action.name}"...`);
         await new Promise(resolve => setTimeout(resolve, action.waitStartingTime * 1000));
       }
 
+      const inputSheetName = action.inputSheet;
+      const outputSheetName = action.outputSheet || inputSheetName;
+
       // Export
-      const sheetName = action.name;
       if (action.exportAction) {
-        console.log(`Exporting data for "${sheetName}" from Salesforce...`);
+        console.log(`Exporting data for "${outputSheetName}" from Salesforce...`);
         try {
           const conn = await SalesforceAuthenticator.authenticate();
           if (!conn || !conn.accessToken) {
@@ -39,22 +40,17 @@ export class ActionProcessor {
             conn.instanceUrl,
             conn.accessToken,
             action.exportAction,
-            sheetName
+            outputSheetName
           );
 
-          // If sheet doesn't exist, create it
-          if (!sheetsData[sheetName]) {
-            sheetsData[sheetName] = exportDataSheet;
-          } else {
-            // Merge the new data with the existing DataSheet
-            sheetsData[sheetName] = DataSheetProcessor.mergeDataSheets(exportDataSheet, sheetsData[sheetName], action.exportAction.uniqueField);
-          }
-          console.log(`Exported data for "${sheetName}" loaded into sheetsData.`);
+          // Overwrite or create the output sheet
+          sheetsData[outputSheetName] = exportDataSheet;
+          console.log(`Exported data for "${outputSheetName}" loaded into sheetsData.`);
         } catch (error: any) {
-          console.error(`Error exporting data for "${sheetName}": ${error.message}`);
+          console.error(`Error exporting data for "${outputSheetName}": ${error.message}`);
           if (execConf.appConfiguration.stopOnError) {
             if (execConf.appConfiguration.rollbackOnError) {
-              console.error(`Rolling back changes from sheet "${sheetName}".`);
+              console.error(`Rolling back changes from sheet "${outputSheetName}".`);
               const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action) - 1);
               await this.processActions(rollbackActions, sheetsData, execConf);
             }
@@ -63,23 +59,23 @@ export class ActionProcessor {
         }
       }
 
-      // Check if the DataSheet exists
-      const dataSheet = sheetsData[sheetName];
+      // Check if the input DataSheet exists
+      const dataSheet = sheetsData[inputSheetName];
       if (!dataSheet) {
-        console.warn(`DataSheet "${sheetName}" not found. Skipping action.`);
+        console.warn(`DataSheet "${inputSheetName}" not found. Skipping action.`);
         continue;
       }
 
       // Transformation
       if (action.transformAction && action.transformAction.fieldsConf) {
-        console.log(`Processing transformation for DataSheet "${sheetName}"...`);
+        console.log(`Processing transformation for DataSheet "${inputSheetName}"...`);
         try {
           DataSheetProcessor.processDataSheet(dataSheet, action.transformAction, sheetsData);
-        }catch (error: any) {
-          console.error(`Error processing transformation for DataSheet "${sheetName}": ${error.message}`);
+        } catch (error: any) {
+          console.error(`Error processing transformation for DataSheet "${inputSheetName}": ${error.message}`);
           if (execConf.appConfiguration.stopOnError) {
             if (execConf.appConfiguration.rollbackOnError) {
-              console.error(`Rolling back changes from sheet "${sheetName}".`);
+              console.error(`Rolling back changes from sheet "${inputSheetName}".`);
               const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action) - 1);
               await this.processActions(rollbackActions, sheetsData, execConf);
             }
@@ -90,33 +86,43 @@ export class ActionProcessor {
 
       // Import
       if (action.importAction) {
-        console.log(`Importing DataSheet "${sheetName}" to Salesforce...`);
+        console.log(`Importing DataSheet "${inputSheetName}" to Salesforce...`);
         try {
-          //get authentication
           const conn = await SalesforceAuthenticator.authenticate();
-          if (!conn || ! conn.accessToken) {
+          if (!conn || !conn.accessToken) {
             throw new Error('Salesforce authentication failed. No connection object returned.');
           }
 
-          // Load data using Bulk API v2
           const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
-          let executionOk = await apiBulkLoader.bulkApiOperation(conn.instanceUrl, conn.accessToken, action.importAction, dataSheet);
-          console.log(`Data loading for sheet "${sheetName}" completed.`);
+
+          // If outputSheetName is defined and different from inputSheetName, clone the input sheet for output
+          let importDataSheet: DataSheet = dataSheet
+          if (outputSheetName && outputSheetName !== inputSheetName) {
+            sheetsData[outputSheetName] = DataSheetProcessor.cloneDataSheet(dataSheet, outputSheetName);
+          }
+
+          let executionOk = await apiBulkLoader.bulkApiOperation(
+            conn.instanceUrl,
+            conn.accessToken,
+            action.importAction,
+            importDataSheet
+          );
+          console.log(`Data loading for sheet "${outputSheetName}" completed.`);
 
           if (!executionOk && execConf.appConfiguration.stopOnError) {
-            console.error(`Errors loading data for sheet "${sheetName}". Stopping further processing.`);
+            console.error(`Errors loading data for sheet "${outputSheetName}". Stopping further processing.`);
             if (execConf.appConfiguration.rollbackOnError) {
-              console.error(`Rolling back changes from sheet "${sheetName}".`);
+              console.error(`Rolling back changes from sheet "${outputSheetName}".`);
               const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action));
               await this.processActions(rollbackActions, sheetsData, execConf);
             }
             return;
           }
         } catch (error: any) {
-          console.error(`Error loading data for sheet "${sheetName}": ${error.message}`);
+          console.error(`Error loading data for sheet "${outputSheetName}": ${error.message}`);
           if (execConf.appConfiguration.stopOnError) {
             if (execConf.appConfiguration.rollbackOnError) {
-              console.error(`Rolling back changes from sheet "${sheetName}".`);
+              console.error(`Rolling back changes from sheet "${outputSheetName}".`);
               const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action) - 1);
               await this.processActions(rollbackActions, sheetsData, execConf);
             }

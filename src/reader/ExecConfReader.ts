@@ -48,7 +48,7 @@ export class ExecConfReader {
   }
 
   private static parseAction(actionData: any): Action {
-    const name = actionData?.name ?? null;
+    const name = actionData?.name ?? '';
     const waitStartingTime = actionData?.waitStartingTime ?? 0;
 
     let transformAction: TransformAction | undefined = undefined;
@@ -92,6 +92,10 @@ export class ExecConfReader {
       });
     }
 
+    // Parse inputSheet (required) and outputSheet (optional)
+    const inputSheet = actionData?.inputSheet ?? null;
+    let outputSheet = actionData?.outputSheet ?? inputSheet;
+
     // Parse exportAction if present
     let exportAction: ExportAction | undefined = undefined;
     if (actionData?.exportAction?.query) {
@@ -99,7 +103,16 @@ export class ExecConfReader {
       exportAction = new ExportAction(actionData.exportAction.query, uniqueField);
     }
 
-    return new Action(name, waitStartingTime, transformAction, importAction, exportAction, fields);
+    return new Action(
+      name,
+      inputSheet,
+      outputSheet,
+      waitStartingTime,
+      transformAction,
+      importAction,
+      exportAction,
+      fields
+    );
   }
 
   private static parseFieldsConf(fieldsConfData: any[]): TransformFieldConf[] {

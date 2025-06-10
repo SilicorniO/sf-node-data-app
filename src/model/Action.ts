@@ -5,6 +5,8 @@ import { ActionField } from './ActionField';
 
 export class Action {
   name: string;
+  inputSheet: string;
+  outputSheet: string;
   waitStartingTime: number = 0;
   transformAction?: TransformAction;
   importAction?: ImportAction;
@@ -13,14 +15,18 @@ export class Action {
 
   constructor(
     name: string,
-    waitStartingTime?: number,
+    inputSheet: string,
+    outputSheet: string,
+    waitStartingTime: number = 0,
     transformAction?: TransformAction,
     importAction?: ImportAction,
     exportAction?: ExportAction,
     fields: ActionField[] = []
   ) {
     this.name = name;
-    this.waitStartingTime = waitStartingTime || 0;
+    this.inputSheet = inputSheet;
+    this.outputSheet = outputSheet || inputSheet;
+    this.waitStartingTime = waitStartingTime;
     this.transformAction = transformAction;
     this.importAction = importAction;
     this.exportAction = exportAction;

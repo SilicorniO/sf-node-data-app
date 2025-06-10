@@ -270,4 +270,18 @@ export class DataSheetProcessor {
     dataSheet.fieldNames = dataSheet.fieldNames.map(apiName => apiNameToName[apiName] ?? apiName);
   }
 
+  /**
+   * Creates a deep clone of a DataSheet.
+   * @param dataSheet The DataSheet to clone.
+   * @param newName Optional new name for the cloned DataSheet.
+   * @returns A new DataSheet object with copied fieldNames and data.
+   */
+  public static cloneDataSheet(dataSheet: DataSheet, newName?: string): DataSheet {
+    return {
+      name: newName || dataSheet.name,
+      fieldNames: [...dataSheet.fieldNames],
+      data: dataSheet.data.map(row => [...row]),
+    };
+  }
+
 }
