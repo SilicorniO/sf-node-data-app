@@ -9,9 +9,8 @@ import { ImportAction } from '../model/ImportAction';
 export class ActionProcessor {
   /**
    * Processes a list of actions: executes transformation and import for each action if configured.
-   * @param actions Array of Action objects to process.
-   * @param sheetsData Dictionary of DataSheet objects.
    * @param execConf The execution configuration (needed for import).
+   * @param sheetsData Dictionary of DataSheet objects.
    */
   static async processActions(
     execConf: ExecConf,
@@ -26,96 +25,174 @@ export class ActionProcessor {
       const inputSheetName = action.inputSheet;
       const outputSheetName = action.outputSheet || inputSheetName;
 
-      // Export
-      if (action.exportAction) {
-        console.log(`Exporting data for "${outputSheetName}" from Salesforce...`);
-        try {
-          const conn = await SalesforceAuthenticator.authenticate();
-          if (!conn || !conn.accessToken) {
-            throw new Error('Salesforce authentication failed. No connection object returned.');
-          }
-          const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
-          const exportDataSheet = await apiBulkLoader.bulkApiQuery(
-            conn.instanceUrl,
-            conn.accessToken,
-            action.exportAction,
-            outputSheetName
-          );
+      // 1. CopySheetAction
+      await this.executeCopySheetAction(action, sheetsData, inputSheetName, outputSheetName);
 
-          // Overwrite or create the output sheet
-          sheetsData[outputSheetName] = exportDataSheet;
-          console.log(`Exported data for "${outputSheetName}" loaded into sheetsData.`);
-        } catch (error: any) {
-          console.error(`Error exporting data for "${outputSheetName}": ${error.message}`);
-          if (execConf.appConfiguration.stopOnError) {
-            ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
-            return;
-          }
+      // 2. ExportAction
+      await this.executeExportAction(execConf, action, sheetsData, outputSheetName);
+
+      // 3. Transformation
+      await this.executeTransformAction(execConf, action, sheetsData, inputSheetName);
+
+      // 4. ImportAction
+      await this.executeImportAction(execConf, action, sheetsData, inputSheetName, outputSheetName);
+    }
+  }
+
+  private static async executeCopySheetAction(
+    action: Action,
+    sheetsData: { [sheetName: string]: DataSheet },
+    inputSheetName: string,
+    outputSheetName: string
+  ): Promise<void> {
+    if (!action.copySheetAction || action.copySheetAction.copyFields.length == 0) {
+      return;
+    }
+
+    const dataSheet = sheetsData[inputSheetName];
+    if (!dataSheet) {
+      console.error(`Input DataSheet "${inputSheetName}" not found for copySheetAction.`);
+      return;
+    }
+
+    // Build new DataSheet with only the specified fields
+    const fieldIndexes = action.copySheetAction.copyFields.map(
+      field => dataSheet.fieldNames.indexOf(field)
+    );
+    const validIndexes = fieldIndexes
+      .map((idx, i) => ({ idx, name: action.copySheetAction!.copyFields[i] }))
+      .filter(f => f.idx !== -1);
+
+    const newFieldNames = validIndexes.map(f => f.name);
+    const newData = dataSheet.data.map(row =>
+      validIndexes.map(f => row[f.idx])
+    );
+
+    const newSheet: DataSheet = {
+      name: outputSheetName,
+      fieldNames: newFieldNames,
+      data: newData,
+    };
+    sheetsData[outputSheetName] = newSheet;
+    console.log(`Copied fields [${newFieldNames.join(', ')}] from "${inputSheetName}" to "${outputSheetName}".`);
+  }
+
+  private static async executeExportAction(
+    execConf: ExecConf,
+    action: Action,
+    sheetsData: { [sheetName: string]: DataSheet },
+    outputSheetName: string
+  ): Promise<void> {
+    if (!action.exportAction) {
+      return;
+    }
+
+    console.log(`Exporting data for "${outputSheetName}" from Salesforce...`);
+    try {
+      const conn = await SalesforceAuthenticator.authenticate();
+      if (!conn || !conn.accessToken) {
+        throw new Error('Salesforce authentication failed. No connection object returned.');
+      }
+      const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
+      const exportDataSheet = await apiBulkLoader.bulkApiQuery(
+        conn.instanceUrl,
+        conn.accessToken,
+        action.exportAction,
+        outputSheetName
+      );
+
+      // Overwrite or create the output sheet
+      sheetsData[outputSheetName] = exportDataSheet;
+      console.log(`Exported data for "${outputSheetName}" loaded into sheetsData.`);
+    } catch (error: any) {
+      console.error(`Error exporting data for "${outputSheetName}": ${error.message}`);
+      if (execConf.appConfiguration.stopOnError) {
+        ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
+      }
+    }
+  }
+
+  private static async executeTransformAction(
+    execConf: ExecConf,
+    action: Action,
+    sheetsData: { [sheetName: string]: DataSheet },
+    inputSheetName: string
+  ): Promise<void> {
+    const dataSheet = sheetsData[inputSheetName];
+    if (!dataSheet) {
+      if (action.transformAction) {
+        console.error(`DataSheet "${inputSheetName}" not found. Skipping transformation.`);
+      }
+      return;
+    }
+
+    if (action.transformAction && action.transformAction.fieldsConf) {
+      console.log(`Processing transformation for DataSheet "${inputSheetName}"...`);
+      try {
+        DataSheetProcessor.processDataSheet(dataSheet, action.transformAction, sheetsData);
+      } catch (error: any) {
+        console.error(`Error processing transformation for DataSheet "${inputSheetName}": ${error.message}`);
+        if (execConf.appConfiguration.stopOnError) {
+          ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
         }
       }
+    }
+  }
 
-      // Check if the input DataSheet exists
-      const dataSheet = sheetsData[inputSheetName];
-      if (!dataSheet) {
-        if (action.transformAction || action.importAction) {
-          console.error(`DataSheet "${inputSheetName}" not found. Skipping transformation and import.`);
-        }
-        continue;
-      }
-
-      // Transformation
-      if (action.transformAction && action.transformAction.fieldsConf) {
-        console.log(`Processing transformation for DataSheet "${inputSheetName}"...`);
-        try {
-          DataSheetProcessor.processDataSheet(dataSheet, action.transformAction, sheetsData);
-        } catch (error: any) {
-          console.error(`Error processing transformation for DataSheet "${inputSheetName}": ${error.message}`);
-          if (execConf.appConfiguration.stopOnError) {
-            ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
-            return;
-          }
-        }
-      }
-
-      // Import
+  private static async executeImportAction(
+    execConf: ExecConf,
+    action: Action,
+    sheetsData: { [sheetName: string]: DataSheet },
+    inputSheetName: string,
+    outputSheetName: string
+  ): Promise<void> {
+    const dataSheet = sheetsData[inputSheetName];
+    if (!dataSheet) {
       if (action.importAction) {
-        console.log(`Importing DataSheet "${inputSheetName}" to Salesforce...`);
-        try {
-          const conn = await SalesforceAuthenticator.authenticate();
-          if (!conn || !conn.accessToken) {
-            throw new Error('Salesforce authentication failed. No connection object returned.');
-          }
+        console.error(`DataSheet "${inputSheetName}" not found. Skipping import.`);
+      }
+      return;
+    }
 
-          const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
+    if (!action.importAction) {
+      return;
+    }
+    
+    console.log(`Importing DataSheet "${inputSheetName}" to Salesforce...`);
+    try {
+      const conn = await SalesforceAuthenticator.authenticate();
+      if (!conn || !conn.accessToken) {
+        throw new Error('Salesforce authentication failed. No connection object returned.');
+      }
 
-          // If outputSheetName is defined and different from inputSheetName, clone the input sheet for output
-          let importDataSheet: DataSheet = dataSheet
-          if (outputSheetName && outputSheetName !== inputSheetName) {
-            sheetsData[outputSheetName] = DataSheetProcessor.cloneDataSheet(dataSheet, outputSheetName);
-          }
+      const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
 
-          let executionOk = await apiBulkLoader.bulkApiOperation(
-            conn.instanceUrl,
-            conn.accessToken,
-            action.importAction,
-            importDataSheet
-          );
-          console.log(`Data loading for sheet "${outputSheetName}" completed.`);
+      // If outputSheetName is defined and different from inputSheetName, clone the input sheet for output
+      let importDataSheet: DataSheet = dataSheet;
+      if (outputSheetName && outputSheetName !== inputSheetName) {
+        importDataSheet = DataSheetProcessor.cloneDataSheet(dataSheet, outputSheetName);
+        sheetsData[outputSheetName] = importDataSheet;
+      }
 
-          if (!executionOk && execConf.appConfiguration.stopOnError) {
-            console.error(`Errors loading data for sheet "${outputSheetName}". Stopping further processing.`);
-            if (execConf.appConfiguration.rollbackOnError) {
-              ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, false);
-            }
-            return;
-          }
-        } catch (error: any) {
-          console.error(`Error loading data for sheet "${outputSheetName}": ${error.message}`);
-          if (execConf.appConfiguration.stopOnError) {
-            ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
-            return;
-          }
+      let resultSheet = await apiBulkLoader.bulkApiOperation(
+        conn.instanceUrl,
+        conn.accessToken,
+        action.importAction,
+        importDataSheet
+      );
+
+      console.log(`Data loading for sheet "${outputSheetName}" completed.`);
+
+      if (!resultSheet && execConf.appConfiguration.stopOnError) {
+        console.error(`Errors loading data for sheet "${outputSheetName}". Stopping further processing.`);
+        if (execConf.appConfiguration.rollbackOnError) {
+          ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, false);
         }
+      }
+    } catch (error: any) {
+      console.error(`Error loading data for sheet "${outputSheetName}": ${error.message}`);
+      if (execConf.appConfiguration.stopOnError) {
+        ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
       }
     }
   }
@@ -142,6 +219,7 @@ export class ActionProcessor {
   private static generateRollbackExecConf(execConf: ExecConf): ExecConf {
     const execConfRollback = new ExecConf(
       execConf.appConfiguration,
+      [],
       []
     );
     execConfRollback.appConfiguration.stopOnError = false;
