@@ -18,14 +18,22 @@ export class DataSheetProcessor {
     const fieldTransformations = [];
     for (const fieldConf of transformAction.fieldsConf) {
       if (fieldConf.transformation && fieldConf.transformation.trim() !== '') {
-        const fieldIndex = dataSheet.fieldNames.indexOf(fieldConf.name);
-        if (fieldIndex !== -1) {
-          fieldTransformations.push({
-            fieldIndex,
-            transformation: fieldConf.transformation,
-            fieldConf,
-          });
+        // get the index of the field in the DataSheet
+        let fieldIndex = dataSheet.fieldNames.indexOf(fieldConf.name);
+
+        // If the field is not found, create the field in the DataSheet
+        if (fieldIndex === -1) {
+          dataSheet.fieldNames.push(fieldConf.name);
+          dataSheet.data.forEach(row => row.push('')); // Add empty value for new field in all rows
+          fieldIndex = dataSheet.fieldNames.length - 1; // Update index to the new field
         }
+
+        // Execute transformation
+        fieldTransformations.push({
+          fieldIndex,
+          transformation: fieldConf.transformation,
+          fieldConf,
+        });
       }
     }
 
@@ -69,8 +77,8 @@ export class DataSheetProcessor {
     // Replace each variable with its looked-up value
     while ((match = variableRegex.exec(transformation)) !== null) {
       const variable = match[1];
-      const [sheetName, apiName, targetColumn] = variable.split('.');
-      if (!sheetName || !apiName || !targetColumn) {
+      const [sheetName, fieldName, targetColumn] = variable.split('.');
+      if (!sheetName || !fieldName || !targetColumn) {
         throw new Error(`Invalid variable format: \${${variable}}`);
       }
 
@@ -79,7 +87,7 @@ export class DataSheetProcessor {
         throw new Error(`Sheet "${sheetName}" not found in sheetsData.`);
       }
 
-      const apiNameIndex = targetSheet.fieldNames.indexOf(apiName);
+      const apiNameIndex = targetSheet.fieldNames.indexOf(fieldName);
       const targetColumnIndex = targetSheet.fieldNames.indexOf(targetColumn);
 
       if (apiNameIndex === -1 || targetColumnIndex === -1) {
