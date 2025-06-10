@@ -61,14 +61,6 @@ async function main() {
     // processactions
     await ActionProcessor.processActions(execConf, sheetsData);
 
-    // --- Translate field names from apiNames back to names using SheetConf ---
-    for (const sheetConf of execConf.sheets) {
-      const sheet = sheetsData[sheetConf.name];
-      if (sheet != null) {
-        DataSheetProcessor.translateApiNamesToFieldNames(sheet, sheetConf.fields);
-      }
-    }
-
     // generate output csvs
     try {
 
