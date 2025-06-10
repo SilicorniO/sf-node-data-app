@@ -45,7 +45,7 @@ export class ActionProcessor {
     inputSheetName: string,
     outputSheetName: string
   ): Promise<void> {
-    if (!action.copySheetAction || action.copySheetAction.copyFields.length == 0) {
+    if (!action.copySheetAction || action.copySheetAction.copyFields.length === 0) {
       return;
     }
 
@@ -55,17 +55,17 @@ export class ActionProcessor {
       return;
     }
 
-    // Build new DataSheet with only the specified fields
+    // Build new DataSheet with only the specified fields (by name), but use apiName for the output fieldNames
     const fieldIndexes = action.copySheetAction.copyFields.map(
-      field => dataSheet.fieldNames.indexOf(field)
+      field => dataSheet.fieldNames.indexOf(field.name)
     );
-    const validIndexes = fieldIndexes
-      .map((idx, i) => ({ idx, name: action.copySheetAction!.copyFields[i] }))
+    const validFields = action.copySheetAction.copyFields
+      .map((field, i) => ({ idx: fieldIndexes[i], apiName: field.apiName }))
       .filter(f => f.idx !== -1);
 
-    const newFieldNames = validIndexes.map(f => f.name);
+    const newFieldNames = validFields.map(f => f.apiName);
     const newData = dataSheet.data.map(row =>
-      validIndexes.map(f => row[f.idx])
+      validFields.map(f => row[f.idx])
     );
 
     const newSheet: DataSheet = {
@@ -157,7 +157,7 @@ export class ActionProcessor {
     if (!action.importAction) {
       return;
     }
-    
+
     console.log(`Importing DataSheet "${inputSheetName}" to Salesforce...`);
     try {
       const conn = await SalesforceAuthenticator.authenticate();

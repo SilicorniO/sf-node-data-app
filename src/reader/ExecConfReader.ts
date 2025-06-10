@@ -73,76 +73,76 @@ export class ExecConfReader {
   }
 
   private static parseAction(actionData: any): Action {
-  const name = actionData?.name ?? '';
-  const waitStartingTime = actionData?.waitStartingTime ?? 0;
+    const name = actionData?.name ?? '';
+    const waitStartingTime = actionData?.waitStartingTime ?? 0;
 
-  let transformAction: TransformAction | undefined = undefined;
-  if (actionData?.transformAction?.fieldsConf) {
-    const fieldsConf = this.parseFieldsConf(actionData.transformAction.fieldsConf);
-    transformAction = new TransformAction(fieldsConf);
-  }
-
-  let importAction: ImportAction | undefined = undefined;
-  if (
-    actionData?.importAction?.objectName ||
-    actionData?.importAction?.uniqueField ||
-    actionData?.importAction?.action
-  ) {
-    const objectName = actionData.importAction.objectName ?? null;
-    const uniqueField = actionData.importAction.uniqueField ?? null;
-    const action = actionData.importAction.action ?? null;
-
-    // Parse importFields as array of strings for ImportAction
-    let importFields: string[] = [];
-    if (Array.isArray(actionData.importAction.importFields)) {
-      importFields = actionData.importAction.importFields.map((field: any) =>
-        typeof field === 'string'
-          ? field
-          : (field?.name ?? '')
-      ).filter((field: string) => field.length > 0);
+    let transformAction: TransformAction | undefined = undefined;
+    if (actionData?.transformAction?.fieldsConf) {
+      const fieldsConf = this.parseFieldsConf(actionData.transformAction.fieldsConf);
+      transformAction = new TransformAction(fieldsConf);
     }
 
-    if (objectName && action) {
-      importAction = new ImportAction(objectName, uniqueField, action, importFields);
+    let importAction: ImportAction | undefined = undefined;
+    if (
+      actionData?.importAction?.objectName ||
+      actionData?.importAction?.uniqueField ||
+      actionData?.importAction?.action
+    ) {
+      const objectName = actionData.importAction.objectName ?? null;
+      const uniqueField = actionData.importAction.uniqueField ?? null;
+      const action = actionData.importAction.action ?? null;
+
+      // Parse importFields as array of strings for ImportAction
+      let importFields: string[] = [];
+      if (Array.isArray(actionData.importAction.importFields)) {
+        importFields = actionData.importAction.importFields.map((field: any) =>
+          typeof field === 'string'
+            ? field
+            : (field?.name ?? '')
+        ).filter((field: string) => field.length > 0);
+      }
+
+      if (objectName && action) {
+        importAction = new ImportAction(objectName, uniqueField, action, importFields);
+      }
     }
-  }
 
-  // Parse copySheetAction if present
-  let copySheetAction: CopySheetAction | undefined = undefined;
-  if (actionData?.copySheetAction?.copyFields) {
-    let copyFields: string[] = [];
-    if (Array.isArray(actionData.copySheetAction.copyFields)) {
-      copyFields = actionData.copySheetAction.copyFields.map((field: any) =>
-        typeof field === 'string'
-          ? field
-          : (field?.name ?? '')
-      ).filter((field: string) => field.length > 0);
+    // Parse copySheetAction if present
+    let copySheetAction: CopySheetAction | undefined = undefined;
+    if (actionData?.copySheetAction?.copyFields) {
+      let copyFields: SheetField[] = [];
+      if (Array.isArray(actionData.copySheetAction.copyFields)) {
+        copyFields = actionData.copySheetAction.copyFields.map((field: any) => {
+          const name = field?.name ?? '';
+          const apiName = field?.apiName ?? name;
+          return new SheetField(name, apiName);
+        });
+      }
+      copySheetAction = new CopySheetAction(copyFields);
     }
-    copySheetAction = new CopySheetAction(copyFields);
+
+    // Parse inputSheet (required) and outputSheet (optional)
+    const inputSheet = actionData?.inputSheet ?? null;
+    let outputSheet = actionData?.outputSheet ?? inputSheet;
+
+    // Parse exportAction if present
+    let exportAction: ExportAction | undefined = undefined;
+    if (actionData?.exportAction?.query) {
+      const uniqueField = actionData.exportAction.uniqueField ?? undefined;
+      exportAction = new ExportAction(actionData.exportAction.query, uniqueField);
+    }
+
+    return new Action(
+      name,
+      inputSheet,
+      outputSheet,
+      waitStartingTime,
+      transformAction,
+      importAction,
+      exportAction,
+      copySheetAction 
+    );
   }
-
-  // Parse inputSheet (required) and outputSheet (optional)
-  const inputSheet = actionData?.inputSheet ?? null;
-  let outputSheet = actionData?.outputSheet ?? inputSheet;
-
-  // Parse exportAction if present
-  let exportAction: ExportAction | undefined = undefined;
-  if (actionData?.exportAction?.query) {
-    const uniqueField = actionData.exportAction.uniqueField ?? undefined;
-    exportAction = new ExportAction(actionData.exportAction.query, uniqueField);
-  }
-
-  return new Action(
-    name,
-    inputSheet,
-    outputSheet,
-    waitStartingTime,
-    transformAction,
-    importAction,
-    exportAction,
-    copySheetAction 
-  );
-}
 
   private static parseFieldsConf(fieldsConfData: any[]): TransformFieldConf[] {
     if (!Array.isArray(fieldsConfData)) {

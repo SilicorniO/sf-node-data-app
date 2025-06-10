@@ -1,7 +1,9 @@
-export class CopySheetAction {
-  copyFields: string[];
+import { SheetField } from './SheetField';
 
-  constructor(copyFields: string[] = []) {
+export class CopySheetAction {
+  copyFields: SheetField[];
+
+  constructor(copyFields: SheetField[] = []) {
     this.copyFields = copyFields;
   }
 }
