@@ -1,4 +1,4 @@
-export class ActionField {
+export class SheetField {
   name: string;
   apiName: string;
   constructor(name: string, apiName: string) {

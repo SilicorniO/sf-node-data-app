@@ -1,4 +1,4 @@
-import { ActionField } from "./ActionField";
+import { ActionField } from "./SheetField";
 
 export type ActionType = "insert" | "update" | "upsert" | "delete";
 export class ImportAction {

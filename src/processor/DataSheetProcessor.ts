@@ -1,5 +1,5 @@
-import { ActionField } from '../model/ActionField';
 import { DataSheet } from '../model/DataSheet';
+import { SheetField } from '../model/SheetField';
 import { TransformAction } from '../model/TransformAction';
 
 export class DataSheetProcessor {
@@ -250,9 +250,9 @@ export class DataSheetProcessor {
    * Translates the fieldNames of a DataSheet from name to apiName using the provided ActionField array.
    * Modifies the DataSheet in place.
    */
-  public static translateFieldNamesToApiNames(dataSheet: DataSheet, actionFields: ActionField[]): void {
+  public static translateFieldNamesToApiNames(dataSheet: DataSheet, sheetFields: SheetField[]): void {
     const nameToApiName: { [name: string]: string } = {};
-    actionFields.forEach(field => {
+    sheetFields.forEach(field => {
       nameToApiName[field.name] = field.apiName;
     });
     dataSheet.fieldNames = dataSheet.fieldNames.map(name => nameToApiName[name] ?? name);
@@ -262,9 +262,9 @@ export class DataSheetProcessor {
    * Translates the fieldNames of a DataSheet from apiName to name using the provided ActionField array.
    * Modifies the DataSheet in place.
    */
-  public static translateApiNamesToFieldNames(dataSheet: DataSheet, actionFields: ActionField[]): void {
+  public static translateApiNamesToFieldNames(dataSheet: DataSheet, sheetFields: SheetField[]): void {
     const apiNameToName: { [apiName: string]: string } = {};
-    actionFields.forEach(field => {
+    sheetFields.forEach(field => {
       apiNameToName[field.apiName] = field.name;
     });
     dataSheet.fieldNames = dataSheet.fieldNames.map(apiName => apiNameToName[apiName] ?? apiName);

@@ -14,11 +14,10 @@ export class ActionProcessor {
    * @param execConf The execution configuration (needed for import).
    */
   static async processActions(
-    actions: Action[],
+    execConf: ExecConf,
     sheetsData: { [sheetName: string]: DataSheet },
-    execConf: ExecConf
   ): Promise<void> {
-    for (const action of actions) {
+    for (const action of execConf.actions) {
       if (action.waitStartingTime > 0) {
         console.log(`Waiting ${action.waitStartingTime} ms before processing action "${action.name}"...`);
         await new Promise(resolve => setTimeout(resolve, action.waitStartingTime * 1000));
@@ -49,11 +48,7 @@ export class ActionProcessor {
         } catch (error: any) {
           console.error(`Error exporting data for "${outputSheetName}": ${error.message}`);
           if (execConf.appConfiguration.stopOnError) {
-            if (execConf.appConfiguration.rollbackOnError) {
-              console.error(`Rolling back changes from sheet "${outputSheetName}".`);
-              const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action) - 1);
-              await this.processActions(rollbackActions, sheetsData, execConf);
-            }
+            ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
             return;
           }
         }
@@ -62,7 +57,9 @@ export class ActionProcessor {
       // Check if the input DataSheet exists
       const dataSheet = sheetsData[inputSheetName];
       if (!dataSheet) {
-        console.warn(`DataSheet "${inputSheetName}" not found. Skipping action.`);
+        if (action.transformAction || action.importAction) {
+          console.error(`DataSheet "${inputSheetName}" not found. Skipping transformation and import.`);
+        }
         continue;
       }
 
@@ -74,11 +71,7 @@ export class ActionProcessor {
         } catch (error: any) {
           console.error(`Error processing transformation for DataSheet "${inputSheetName}": ${error.message}`);
           if (execConf.appConfiguration.stopOnError) {
-            if (execConf.appConfiguration.rollbackOnError) {
-              console.error(`Rolling back changes from sheet "${inputSheetName}".`);
-              const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action) - 1);
-              await this.processActions(rollbackActions, sheetsData, execConf);
-            }
+            ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
             return;
           }
         }
@@ -112,20 +105,14 @@ export class ActionProcessor {
           if (!executionOk && execConf.appConfiguration.stopOnError) {
             console.error(`Errors loading data for sheet "${outputSheetName}". Stopping further processing.`);
             if (execConf.appConfiguration.rollbackOnError) {
-              console.error(`Rolling back changes from sheet "${outputSheetName}".`);
-              const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action));
-              await this.processActions(rollbackActions, sheetsData, execConf);
+              ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, false);
             }
             return;
           }
         } catch (error: any) {
           console.error(`Error loading data for sheet "${outputSheetName}": ${error.message}`);
           if (execConf.appConfiguration.stopOnError) {
-            if (execConf.appConfiguration.rollbackOnError) {
-              console.error(`Rolling back changes from sheet "${outputSheetName}".`);
-              const rollbackActions = this.generateRollbackActions(actions, actions.indexOf(action) - 1);
-              await this.processActions(rollbackActions, sheetsData, execConf);
-            }
+            ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
             return;
           }
         }
@@ -133,33 +120,62 @@ export class ActionProcessor {
     }
   }
 
-  /**
- * Generates a new array of actions for rollback (delete) from the given actions array,
- * starting from the given index and going backwards to 0.
- * Each new action will have only an ImportAction with action="delete".
- * The transformAction will be omitted.
- * @param actions The original array of actions.
- * @param index The index to start the rollback from.
- * @returns An array of rollback (delete) actions.
- */
-private static generateRollbackActions(actions: Action[], index: number): Action[] {
-  const rollbackActions: Action[] = [];
-  for (let i = index; i >= 0; i--) {
-    const original = actions[i];
-    if (original.importAction) {
-      const importName = original.importAction.objectName;
-      // Create a new ImportAction for delete
-      const deleteImportAction = new ImportAction(
-        importName,
-        '',
-        'delete',
-        []
-      );
-      // Create a new Action with only the delete ImportAction
-      rollbackActions.push(new Action(original.name, 0, undefined, deleteImportAction));
+  private static async executeRollbackOnError(
+    execConf: ExecConf,
+    sheetsData: { [sheetName: string]: DataSheet },
+    action: Action,
+    includeAction: boolean
+  ): Promise<void> {
+    if (execConf.appConfiguration.rollbackOnError) {
+      console.error(`Rolling back changes from action "${action.name}".`);
+      const indexAction = execConf.actions.indexOf(action) + (includeAction ? 0 : -1);
+
+      // Generate a rollback execConf with only delete actions
+      const rollbackExecConf = ActionProcessor.generateRollbackExecConf(execConf);
+      rollbackExecConf.actions = this.generateRollbackActions(execConf.actions, indexAction);
+
+      // process rollback actions
+      await this.processActions(execConf, sheetsData);
     }
   }
-  return rollbackActions;
-}
+
+  private static generateRollbackExecConf(execConf: ExecConf): ExecConf {
+    const execConfRollback = new ExecConf(
+      execConf.appConfiguration,
+      []
+    );
+    execConfRollback.appConfiguration.stopOnError = false;
+    execConfRollback.appConfiguration.rollbackOnError = false;
+    return execConfRollback;
+  }
+
+  /**
+   * Generates a new array of actions for rollback (delete) from the given actions array,
+   * starting from the given index and going backwards to 0.
+   * Each new action will have only an ImportAction with action="delete".
+   * The transformAction will be omitted.
+   * @param actions The original array of actions.
+   * @param index The index to start the rollback from.
+   * @returns An array of rollback (delete) actions.
+   */
+  private static generateRollbackActions(actions: Action[], index: number): Action[] {
+    const rollbackActions: Action[] = [];
+    for (let i = index; i >= 0; i--) {
+      const action = actions[i];
+      if (action.importAction) {
+        const importName = action.importAction.objectName;
+        // Create a new ImportAction for delete
+        const deleteImportAction = new ImportAction(
+          importName,
+          '',
+          'delete',
+          []
+        );
+        // Create a new Action with only the delete ImportAction
+        rollbackActions.push(new Action(action.name, action.outputSheet, action.outputSheet, 0, undefined, deleteImportAction));
+      }
+    }
+    return rollbackActions;
+  }
 
 }

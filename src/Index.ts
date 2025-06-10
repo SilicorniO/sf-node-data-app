@@ -52,22 +52,22 @@ async function main() {
       process.env.SF_INSTANCE_URL!
     );
 
-    // For each action, translate field names to apiNames in sheetsData
-    for (const action of execConf.actions) {
-      const sheet = sheetsData[action.name];
+    // --- Translate field names to apiNames using SheetConf ---
+    for (const sheetConf of execConf.sheets) {
+      const sheet = sheetsData[sheetConf.name];
       if (sheet != null) {
-        DataSheetProcessor.translateFieldNamesToApiNames(sheet, action.fields);
+        DataSheetProcessor.translateFieldNamesToApiNames(sheet, sheetConf.fields);
       }
     }
 
     // processactions
-    await ActionProcessor.processActions(execConf.actions, sheetsData, execConf);
+    await ActionProcessor.processActions(execConf, sheetsData);
 
-    // Translate fields from sheets apiNames
-    for (const action of execConf.actions) {
-      const sheet = sheetsData[action.name];
+    // --- Translate field names from apiNames back to names using SheetConf ---
+    for (const sheetConf of execConf.sheets) {
+      const sheet = sheetsData[sheetConf.name];
       if (sheet != null) {
-        DataSheetProcessor.translateApiNamesToFieldNames(sheet, action.fields);
+        DataSheetProcessor.translateApiNamesToFieldNames(sheet, sheetConf.fields);
       }
     }
 

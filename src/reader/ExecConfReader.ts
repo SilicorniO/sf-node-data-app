@@ -8,7 +8,8 @@ import { ImportAction } from '../model/ImportAction';
 import { ExportAction } from '../model/ExportAction';
 import { AppConfiguration } from '../model/AppConfiguration';
 import { ExecConf } from '../model/ExecConf';
-import { ActionField } from '../model/ActionField';
+import { SheetConf } from '../model/SheetConf';
+import { SheetField } from '../model/SheetField';
 
 export class ExecConfReader {
   static readConfFile(confFilePath: string): ExecConf {
@@ -19,11 +20,14 @@ export class ExecConfReader {
       // Construct ImportConf
       const importConf = this.parseImportConf(confData.appConfiguration);
 
+      // Construct SheetConf array
+      const sheets = this.parseSheets(confData.sheets);
+
       // Construct Action array
       const actions = this.parseActions(confData.objectsConf || confData.actions);
 
       // Construct ExecConf
-      const execConf = new ExecConf(importConf, actions);
+      const execConf = new ExecConf(importConf, actions, sheets);
       return execConf;
     } catch (error: any) {
       throw new Error(`Error reading or parsing configuration file: ${error.message}`);
@@ -38,6 +42,26 @@ export class ExecConfReader {
     const apiVersion = importConfData?.apiVersion ?? "58.0";
 
     return new AppConfiguration(bulkApiMaxWaitSec, bulkApiPollIntervalSec, stopOnError, rollbackOnError, apiVersion);
+  }
+
+  private static parseSheets(sheetsData: any[]): SheetConf[] {
+    if (!Array.isArray(sheetsData)) {
+      return [];
+    }
+    return sheetsData.map(sheetData => this.parseSheet(sheetData));
+  }
+
+  private static parseSheet(sheetData: any): SheetConf {
+    const name = sheetData?.name ?? '';
+    let fields: SheetField[] = [];
+    if (Array.isArray(sheetData.fields)) {
+      fields = sheetData.fields.map((field: any) => {
+        const fname = field?.name ?? '';
+        const apiName = field?.apiName ?? fname;
+        return new SheetField(fname, apiName);
+      });
+    }
+    return new SheetConf(name, fields);
   }
 
   private static parseActions(actionsData: any[]): Action[] {
@@ -58,7 +82,6 @@ export class ExecConfReader {
     }
 
     let importAction: ImportAction | undefined = undefined;
-    let fields: ActionField[] = [];
     if (
       actionData?.importAction?.objectName ||
       actionData?.importAction?.uniqueField ||
@@ -83,15 +106,6 @@ export class ExecConfReader {
       }
     }
 
-    // Parse fields for Action (array of ActionField)
-    if (Array.isArray(actionData.fields)) {
-      fields = actionData.fields.map((field: any) => {
-        const name = field?.name ?? '';
-        const apiName = field?.apiName ?? name;
-        return new ActionField(name, apiName);
-      });
-    }
-
     // Parse inputSheet (required) and outputSheet (optional)
     const inputSheet = actionData?.inputSheet ?? null;
     let outputSheet = actionData?.outputSheet ?? inputSheet;
@@ -110,8 +124,7 @@ export class ExecConfReader {
       waitStartingTime,
       transformAction,
       importAction,
-      exportAction,
-      fields
+      exportAction
     );
   }
 
