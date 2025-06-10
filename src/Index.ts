@@ -5,13 +5,11 @@ import { ExecConfReader } from './reader/ExecConfReader';
 import { SalesforceAuthenticator } from './salesforce/SalesforceAuthenticator';
 import { ExcelReader } from './reader/ExcelReader';
 import * as dotenv from 'dotenv';
-import { ExcelGenerator } from './generator/ExcelGenerator';
 import { CsvReader } from './reader/CsvReader';
 import { CsvGenerator } from './generator/CsvGenerator';
 import { ActionProcessor } from './processor/ActionProcessor';
 import { DataSheetProcessor } from './processor/DataSheetProcessor';
 
-const EXCEL_FILE_SUFFIX = '_results.xlsx';
 const CSV_FILE_SUFFIX = '_results.csv';
 
 async function main() {
@@ -71,46 +69,12 @@ async function main() {
       }
     }
 
-    // generate excelfile
-    if (excelFilePath != null) {
-      // filter sheetsData in excelSheetsData
-      const filteredExcelSheetsData: {[sheetName: string]: DataSheet} = {};
-      for (const sheetName of Object.keys(excelSheetsData)) {
-        filteredExcelSheetsData[sheetName] = sheetsData[sheetName];
-      }
-
-      // get the excel file name from the excelFilePath
-      const excelFileName = excelFilePath.split('/').pop() || 'import';
-      const excelFileNameWithoutExtension = excelFileName.split('.').slice(0, -1).join('.') + EXCEL_FILE_SUFFIX;
-      const excelFilePathWithoutExtension = outputFolder + '/' + excelFileNameWithoutExtension;
-
-      // Generate Excel file for the sheetsData
-      console.log(`Generating Excel file '${excelFileNameWithoutExtension}'`);
-      await ExcelGenerator.generateExcelFile(
-        filteredExcelSheetsData,
-        excelFilePathWithoutExtension
-      );
-    }
-
     // generate output csvs
     try {
-      // filter sheetsData in csvSheetsData
-      const filteredCsvSheetsData: {[sheetName: string]: DataSheet} = {};
-      for (const sheetName of Object.keys(csvSheetsData)) {
-        filteredCsvSheetsData[sheetName] = sheetsData[sheetName];
-      }
-
-      // inclide missing sheets
-      const missingSheets = Object.keys(sheetsData).filter(sheetName => !excelSheetsData[sheetName] && !csvSheetsData[sheetName]);
-      if (missingSheets.length > 0) {
-        // convert missingSheets to dictionary
-        for (const sheetName of missingSheets) {
-          filteredCsvSheetsData[sheetName] = sheetsData[sheetName];
-        }
-      }
 
       // Generate CSV files for the sheetsData
-      for (const sheetName in filteredCsvSheetsData) {
+      console.log('Object.keys(sheetsData)', Object.keys(sheetsData));
+      for (const sheetName of Object.keys(sheetsData)) {
         console.log(`Generating CSV file ${sheetName}${CSV_FILE_SUFFIX}`);
         await CsvGenerator.generateCsvFile(sheetsData[sheetName], outputFolder, `${sheetName}${CSV_FILE_SUFFIX}`);
       }
