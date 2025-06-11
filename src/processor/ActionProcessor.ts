@@ -119,7 +119,7 @@ export class ActionProcessor {
 
       // Overwrite or merge the output sheet
       if (sheetsData[outputSheetName]) {
-        DataSheetProcessor.mergeDataSheets(sheetsData[outputSheetName], exportDataSheet, action.exportAction.uniqueField);
+        sheetsData[outputSheetName] = DataSheetProcessor.mergeDataSheets(sheetsData[outputSheetName], exportDataSheet, action.exportAction.uniqueField);
       } else {
         sheetsData[outputSheetName] = exportDataSheet;
       }
