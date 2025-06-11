@@ -26,16 +26,28 @@ export class ActionProcessor {
       const outputSheetName = action.outputSheet || inputSheetName;
 
       // 1. CopySheetAction
-      await this.executeCopySheetAction(action, sheetsData, inputSheetName, outputSheetName);
+      let resultOk = await this.executeCopySheetAction(action, sheetsData, inputSheetName, outputSheetName);
+      if (!resultOk) {
+        return;
+      }
 
       // 2. ExportAction
-      await this.executeExportAction(execConf, action, sheetsData, outputSheetName);
+      resultOk = await this.executeExportAction(execConf, action, sheetsData, outputSheetName);
+      if (!resultOk) {
+        return;
+      }
 
       // 3. Transformation
-      await this.executeTransformAction(execConf, action, sheetsData, inputSheetName);
+      resultOk = await this.executeTransformAction(execConf, action, sheetsData, inputSheetName);
+      if (!resultOk) {
+        return;
+      }
 
       // 4. ImportAction
-      await this.executeImportAction(execConf, action, sheetsData, inputSheetName, outputSheetName);
+      resultOk = await this.executeImportAction(execConf, action, sheetsData, inputSheetName, outputSheetName);
+      if (!resultOk) {
+        return;
+      }
     }
   }
 
@@ -44,15 +56,15 @@ export class ActionProcessor {
     sheetsData: { [sheetName: string]: DataSheet },
     inputSheetName: string,
     outputSheetName: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!action.copySheetAction || action.copySheetAction.copyFields.length === 0) {
-      return;
+      return true;
     }
 
     const dataSheet = sheetsData[inputSheetName];
     if (!dataSheet) {
       console.error(`Input DataSheet "${inputSheetName}" not found for copySheetAction.`);
-      return;
+      return false;
     }
 
     // Build new DataSheet with only the specified fields (by name), but use apiName for the output fieldNames
@@ -75,6 +87,8 @@ export class ActionProcessor {
     };
     sheetsData[outputSheetName] = newSheet;
     console.log(`Copied fields [${newFieldNames.join(', ')}] from "${inputSheetName}" to "${outputSheetName}".`);
+
+    return true;
   }
 
   private static async executeExportAction(
@@ -82,9 +96,9 @@ export class ActionProcessor {
     action: Action,
     sheetsData: { [sheetName: string]: DataSheet },
     outputSheetName: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!action.exportAction) {
-      return;
+      return true;
     }
 
     console.log(`Exporting data for "${outputSheetName}" from Salesforce...`);
@@ -107,9 +121,12 @@ export class ActionProcessor {
     } catch (error: any) {
       console.error(`Error exporting data for "${outputSheetName}": ${error.message}`);
       if (execConf.appConfiguration.stopOnError) {
-        ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
+        await ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
+        return false;
       }
     }
+
+    return true;
   }
 
   private static async executeTransformAction(
@@ -117,13 +134,13 @@ export class ActionProcessor {
     action: Action,
     sheetsData: { [sheetName: string]: DataSheet },
     inputSheetName: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const dataSheet = sheetsData[inputSheetName];
     if (!dataSheet) {
       if (action.transformAction) {
         console.error(`DataSheet "${inputSheetName}" not found. Skipping transformation.`);
       }
-      return;
+      return true;
     }
 
     if (action.transformAction && action.transformAction.fieldsConf) {
@@ -133,10 +150,13 @@ export class ActionProcessor {
       } catch (error: any) {
         console.error(`Error processing transformation for DataSheet "${inputSheetName}": ${error.message}`);
         if (execConf.appConfiguration.stopOnError) {
-          ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
+          await ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
+          return false;
         }
       }
     }
+
+    return true;
   }
 
   private static async executeImportAction(
@@ -145,17 +165,15 @@ export class ActionProcessor {
     sheetsData: { [sheetName: string]: DataSheet },
     inputSheetName: string,
     outputSheetName: string
-  ): Promise<void> {
-    const dataSheet = sheetsData[inputSheetName];
-    if (!dataSheet) {
-      if (action.importAction) {
-        console.error(`DataSheet "${inputSheetName}" not found. Skipping import.`);
-      }
-      return;
+  ): Promise<boolean> {
+    if (!action.importAction) {
+      return true;
     }
 
-    if (!action.importAction) {
-      return;
+    const dataSheet = sheetsData[inputSheetName];
+    if (!dataSheet) {
+      console.error(`DataSheet "${inputSheetName}" not found. Skipping import.`);
+      return execConf.appConfiguration.stopOnError ? false : true;
     }
 
     console.log(`Importing DataSheet "${inputSheetName}" to Salesforce...`);
@@ -181,20 +199,20 @@ export class ActionProcessor {
         importDataSheet
       );
 
-      console.log(`Data loading for sheet "${outputSheetName}" completed.`);
+      console.log(`Data loading for sheet "${outputSheetName}" completed${resultSheet ? '' : ' with errors'}.`);
 
       if (!resultSheet && execConf.appConfiguration.stopOnError) {
-        console.error(`Errors loading data for sheet "${outputSheetName}". Stopping further processing.`);
-        if (execConf.appConfiguration.rollbackOnError) {
-          ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, false);
-        }
+        throw new Error(`Errors loading data for sheet "${outputSheetName}". Stopping further processing.`);
       }
     } catch (error: any) {
       console.error(`Error loading data for sheet "${outputSheetName}": ${error.message}`);
       if (execConf.appConfiguration.stopOnError) {
         ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
+        return false
       }
     }
+
+    return true;
   }
 
   private static async executeRollbackOnError(
@@ -212,7 +230,7 @@ export class ActionProcessor {
       rollbackExecConf.actions = this.generateRollbackActions(execConf.actions, indexAction);
 
       // process rollback actions
-      await this.processActions(execConf, sheetsData);
+      await this.processActions(rollbackExecConf, sheetsData);
     }
   }
 
