@@ -10,7 +10,7 @@ import { CsvGenerator } from './generator/CsvGenerator';
 import { ActionProcessor } from './processor/ActionProcessor';
 import { DataSheetProcessor } from './processor/DataSheetProcessor';
 
-const CSV_FILE_SUFFIX = '_results.csv';
+const CSV_FILE_SUFFIX = '.csv';
 
 async function main() {
   // Load environment variables from .env file
