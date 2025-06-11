@@ -65,7 +65,6 @@ async function main() {
     try {
 
       // Generate CSV files for the sheetsData
-      console.log('Object.keys(sheetsData)', Object.keys(sheetsData));
       for (const sheetName of Object.keys(sheetsData)) {
         console.log(`Generating CSV file ${sheetName}${CSV_FILE_SUFFIX}`);
         await CsvGenerator.generateCsvFile(sheetsData[sheetName], outputFolder, `${sheetName}${CSV_FILE_SUFFIX}`);
