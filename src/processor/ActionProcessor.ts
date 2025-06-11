@@ -6,6 +6,7 @@ import { SalesforceBulkApiLoader } from '../salesforce/SalesforceBulkApiLoader';
 import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
 import { ImportAction } from '../model/ImportAction';
 
+const ROLLBACK_ACTION_PREFIX = 'Rollback - ';
 export class ActionProcessor {
   /**
    * Processes a list of actions: executes transformation and import for each action if configured.
@@ -21,6 +22,7 @@ export class ActionProcessor {
         console.log(`Waiting ${action.waitStartingTime} ms before processing action "${action.name}"...`);
         await new Promise(resolve => setTimeout(resolve, action.waitStartingTime * 1000));
       }
+      console.log(`· Processing action "${action.name}"...`);
 
       const inputSheetName = action.inputSheet;
       const outputSheetName = action.outputSheet || inputSheetName;
@@ -115,8 +117,12 @@ export class ActionProcessor {
         outputSheetName
       );
 
-      // Overwrite or create the output sheet
-      sheetsData[outputSheetName] = exportDataSheet;
+      // Overwrite or merge the output sheet
+      if (sheetsData[outputSheetName]) {
+        DataSheetProcessor.mergeDataSheets(sheetsData[outputSheetName], exportDataSheet, action.exportAction.uniqueField);
+      } else {
+        sheetsData[outputSheetName] = exportDataSheet;
+      }
       console.log(`Exported data for "${outputSheetName}" loaded into sheetsData.`);
     } catch (error: any) {
       console.error(`Error exporting data for "${outputSheetName}": ${error.message}`);
@@ -262,7 +268,7 @@ export class ActionProcessor {
         const importName = action.importAction.objectName;
         // Create a new ImportAction for delete
         const deleteImportAction = new ImportAction(
-          importName,
+          ROLLBACK_ACTION_PREFIX + importName,
           '',
           'delete',
           []
