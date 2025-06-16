@@ -5,6 +5,7 @@ import { ExecConf } from '../model/ExecConf';
 import { SalesforceBulkApiLoader } from '../salesforce/SalesforceBulkApiLoader';
 import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
 import { ImportAction } from '../model/ImportAction';
+import { SheetField } from '../model/SheetField';
 
 const ROLLBACK_ACTION_PREFIX = 'Rollback - ';
 export class ActionProcessor {
@@ -59,7 +60,7 @@ export class ActionProcessor {
     inputSheetName: string,
     outputSheetName: string
   ): Promise<boolean> {
-    if (!action.copySheetAction || action.copySheetAction.copyFields.length === 0) {
+    if (!action.copySheetAction) {
       return true;
     }
 
@@ -69,11 +70,19 @@ export class ActionProcessor {
       return false;
     }
 
+    // get fields to copy, if there are no fields we copy all
+    let copyFields = action.copySheetAction.copyFields;
+    if (copyFields.length == 0) {
+      copyFields = dataSheet.fieldNames.map(fieldName => {
+        return new SheetField(fieldName, fieldName)
+      });
+    }
+
     // Build new DataSheet with only the specified fields (by name), but use apiName for the output fieldNames
-    const fieldIndexes = action.copySheetAction.copyFields.map(
+    const fieldIndexes = copyFields.map(
       field => dataSheet.fieldNames.indexOf(field.name)
     );
-    const validFields = action.copySheetAction.copyFields
+    const validFields = copyFields
       .map((field, i) => ({ idx: fieldIndexes[i], apiName: field.apiName }))
       .filter(f => f.idx !== -1);
 
@@ -87,8 +96,13 @@ export class ActionProcessor {
       fieldNames: newFieldNames,
       data: newData,
     };
-    sheetsData[outputSheetName] = newSheet;
-    console.log(`Copied fields [${newFieldNames.join(', ')}] from "${inputSheetName}" to "${outputSheetName}".`);
+
+    // Overwrite or merge the output sheet
+    if (sheetsData[outputSheetName]) {
+      sheetsData[outputSheetName] = DataSheetProcessor.mergeDataSheets(sheetsData[outputSheetName], newSheet, action.copySheetAction.uniqueField);
+    } else {
+      sheetsData[outputSheetName] = newSheet;
+    }
 
     return true;
   }

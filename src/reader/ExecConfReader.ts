@@ -109,7 +109,7 @@ export class ExecConfReader {
 
     // Parse copySheetAction if present
     let copySheetAction: CopySheetAction | undefined = undefined;
-    if (actionData?.copySheetAction?.copyFields) {
+    if (actionData?.copySheetAction) {
       let copyFields: SheetField[] = [];
       if (Array.isArray(actionData.copySheetAction.copyFields)) {
         copyFields = actionData.copySheetAction.copyFields.map((field: any) => {
@@ -118,7 +118,8 @@ export class ExecConfReader {
           return new SheetField(name, apiName);
         });
       }
-      copySheetAction = new CopySheetAction(copyFields);
+      const uniqueField = actionData.copySheetAction.uniqueField ?? null;
+      copySheetAction = new CopySheetAction(copyFields, uniqueField);
     }
 
     // Parse inputSheet (required) and outputSheet (optional)
