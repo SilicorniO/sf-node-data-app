@@ -50,7 +50,9 @@ export class DataSheetProcessor {
         const transformedValue = DataSheetProcessor.applyTransformation(
           transformation,
           originalValue,
-          sheetsData
+          row,
+          dataSheet,
+          sheetsData,
         );
         row[fieldIndex] = transformedValue;
       }
@@ -61,12 +63,15 @@ export class DataSheetProcessor {
    * Applies a transformation string to a value, using other sheets if needed.
    * @param transformation The transformation text to apply.
    * @param value The value to transform.
+   * @param row The list of values
    * @param sheetsData A dictionary of all DataSheets being processed.
    * @returns The transformed value as a string.
    */
   private static applyTransformation(
     transformation: string,
     value: string,
+    row: string[],
+    dataSheet: DataSheet,
     sheetsData: { [sheetName: string]: DataSheet }
   ): string {
     // Find all variables in the transformation string
@@ -77,38 +82,31 @@ export class DataSheetProcessor {
     // Replace each variable with its looked-up value
     while ((match = variableRegex.exec(transformation)) !== null) {
       const variable = match[1];
-      const [sheetName, fieldName, targetColumn] = variable.split('.');
-      if (!sheetName || !fieldName || !targetColumn) {
-        throw new Error(`Invalid variable format: \${${variable}}`);
-      }
+      const [sheetOrVarName, fieldName, targetColumn] = variable.split('.');
 
-      const targetSheet = sheetsData[sheetName];
-      if (!targetSheet) {
-        throw new Error(`Sheet "${sheetName}" not found in sheetsData.`);
-      }
-
-      const apiNameIndex = targetSheet.fieldNames.indexOf(fieldName);
-      const targetColumnIndex = targetSheet.fieldNames.indexOf(targetColumn);
-
-      if (apiNameIndex === -1 || targetColumnIndex === -1) {
-        throw new Error(`Invalid column references in variable: \${${variable}}`);
-      }
-
-      // Build a lookup map for the target sheet
-      const lookupMap = new Map<string, string>();
-      for (const row of targetSheet.data) {
-        lookupMap.set(row[apiNameIndex], row[targetColumnIndex]);
-      }
-
-      const lookupValue = lookupMap.get(value);
-      if (lookupValue === undefined) {
-        return value; // Return the original value if not found
+      let valueTranslation = '';
+      if (sheetOrVarName && fieldName && targetColumn) {
+        valueTranslation = DataSheetProcessor.applyTransformationFindValueInSheet(
+          sheetOrVarName,
+          fieldName,
+          targetColumn,
+          value,
+          sheetsData
+        )
+      } else if (sheetOrVarName && !fieldName && !targetColumn) {
+        valueTranslation = DataSheetProcessor.applyTransformationVariableInRow(
+          sheetOrVarName,
+          row,
+          dataSheet
+        )
+      } else {
+        console.error(`It was not possible to transform the variable ${match[0]}`)
       }
 
       // Replace the variable in the transformation string with the looked-up value
       translatedTransformation = translatedTransformation.replace(
         match[0],
-        `${lookupValue}`
+        `${valueTranslation}`
       );
     }
 
@@ -120,6 +118,51 @@ export class DataSheetProcessor {
       console.error(`Error evaluating transformation "${transformation}":`, error);
       return '';
     }
+  }
+
+  private static applyTransformationFindValueInSheet(
+    sheetName: string,
+    fieldName: string,
+    targetColumn: string,
+    value: string,
+    sheetsData: { [sheetName: string]: DataSheet }
+  ): string {
+    const variable = `\${${sheetName}.${fieldName}.${targetColumn}}`
+    const targetSheet = sheetsData[sheetName];
+    if (!targetSheet) {
+      throw new Error(`Sheet "${sheetName}" not found in sheetsData.`);
+    }
+
+    const apiNameIndex = targetSheet.fieldNames.indexOf(fieldName);
+    const targetColumnIndex = targetSheet.fieldNames.indexOf(targetColumn);
+
+    if (apiNameIndex === -1 || targetColumnIndex === -1) {
+      throw new Error(`Invalid column references in variable: ${variable}`);
+    }
+
+    // Build a lookup map for the target sheet
+    for (const row of targetSheet.data) { 
+      if (row[apiNameIndex] == value) {
+        return row[targetColumnIndex]
+      }
+    }
+
+    throw new Error(`Value "${value}" not found in sheet "${sheetName}" and field "${fieldName}"`);
+  }
+
+  private static applyTransformationVariableInRow(
+    fieldName: string,
+    row: string[],
+    dataSheet: DataSheet
+  ): string {
+    const variable = `\${${fieldName}}`
+
+    const apiNameIndex = dataSheet.fieldNames.indexOf(fieldName);
+    if (apiNameIndex === -1) {
+      throw new Error(`Invalid column references in variable: ${variable}`);
+    }
+
+    return row[apiNameIndex];
   }
 
   /**
