@@ -65,7 +65,7 @@ export class SalesforceBulkApiLoader {
       let validIndexes: number[] = [];
       let headers: string[] = [];
 
-      if (importAction.importFields && importAction.importFields.length > 1) {
+      if (importAction.importFields && importAction.importFields.length > 0) {
         // We include Id field if was found
         if (indexIdField >= 0) {
           validIndexes.push(indexIdField);
