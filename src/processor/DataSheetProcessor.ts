@@ -60,6 +60,25 @@ export class DataSheetProcessor {
   }
 
   /**
+   * Filter data
+   * @param dataSheet 
+   * @param condition 
+   * @returns filtered data 
+   */
+  public static filterRowsByCondition(
+    dataSheet: DataSheet,
+    condition: string
+  ): string[][] {
+    return dataSheet.data.filter(row => {
+      // Evaluate the condition using applyTransformation for each row
+      // The value parameter can be empty if not used in the condition
+      const result = this.applyTransformation(condition, '', row, dataSheet, {});
+      // Consider the row valid if the result is 'true' (as string) or boolean true
+      return result === 'true';
+    });
+  }
+
+  /**
    * Applies a transformation string to a value, using other sheets if needed.
    * @param transformation The transformation text to apply.
    * @param value The value to transform.

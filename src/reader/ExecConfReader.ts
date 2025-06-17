@@ -119,7 +119,8 @@ export class ExecConfReader {
         });
       }
       const uniqueField = actionData.copySheetAction.uniqueField ?? null;
-      copySheetAction = new CopySheetAction(copyFields, uniqueField);
+      const condition = actionData.copySheetAction.condition ?? null;
+      copySheetAction = new CopySheetAction(copyFields, uniqueField, condition);
     }
 
     // Parse inputSheet (required) and outputSheet (optional)

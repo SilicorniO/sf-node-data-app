@@ -86,8 +86,17 @@ export class ActionProcessor {
       .map((field, i) => ({ idx: fieldIndexes[i], apiName: field.apiName }))
       .filter(f => f.idx !== -1);
 
+    // filter data rows to copy
+    let rows = dataSheet.data;
+    if (action.copySheetAction.condition) {
+      rows = DataSheetProcessor.filterRowsByCondition(
+        dataSheet,
+        action.copySheetAction.condition
+      );
+    }
+
     const newFieldNames = validFields.map(f => f.apiName);
-    const newData = dataSheet.data.map(row =>
+    const newData = rows.map(row =>
       validFields.map(f => row[f.idx])
     );
 
