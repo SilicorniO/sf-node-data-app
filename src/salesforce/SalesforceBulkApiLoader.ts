@@ -288,7 +288,8 @@ export class SalesforceBulkApiLoader {
 
       return jobStatus.numberRecordsFailed == 0;
     } catch (error: any) {
-      throw new Error(`Error during Bulk API v2 ${importAction.action} operation: ${error.message} (Check the import configuration for this action)`);
+      const errorDetails = this.readBulkApiErrors(error);
+      throw new Error(`Error during Bulk API v2 ${importAction.action} operation: ${errorDetails} (Check the import configuration for this action)`);
     }
   }
 
@@ -365,5 +366,14 @@ export class SalesforceBulkApiLoader {
     };
 
     return dataSheet;
+  }
+
+  private readBulkApiErrors(error: any): string {
+    if (error?.response?.data && Array.isArray(error.response.data)) {
+      return error.response.data
+        .map((err: any) => `[${err.errorCode}] ${err.message}`)
+        .join(' | ');
+    }
+    return error?.message || 'Unknown error';
   }
 }
