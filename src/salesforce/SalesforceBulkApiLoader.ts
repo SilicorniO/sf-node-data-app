@@ -316,8 +316,14 @@ export class SalesforceBulkApiLoader {
       contentType: 'CSV',
       lineEnding: CSV_LINE_ENDING,
     };
-    const jobResponse = await axiosInstance.post('/jobs/query', jobRequest);
-    const jobId = (jobResponse.data as JobInfo).id;
+    let jobId;
+    try {
+      const jobResponse = await axiosInstance.post('/jobs/query', jobRequest);
+      jobId = (jobResponse.data as JobInfo).id;
+    } catch (error: any) {
+      const errorDetails = this.readBulkApiErrors(error);
+      throw new Error(`Error during Bulk API v2 operation: ${errorDetails} (Check the import configuration for this action)`);
+    }
     if (!jobId) {
       throw new Error('Failed to create Bulk API v2 query job: Job ID is missing.');
     }

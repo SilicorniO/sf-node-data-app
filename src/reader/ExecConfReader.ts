@@ -36,13 +36,14 @@ export class ExecConfReader {
   }
 
   private static parseImportConf(importConfData: any): AppConfiguration {
+    const processingType = importConfData?.processingType ?? "bulk";
     const bulkApiMaxWaitSec = importConfData?.bulkApiMaxWaitSec ?? null;
     const bulkApiPollIntervalSec = importConfData?.bulkApiPollIntervalSec ?? null;
     const stopOnError = importConfData?.stopOnError ?? false;
     const rollbackOnError = importConfData?.rollbackOnError ?? false;
     const apiVersion = importConfData?.apiVersion ?? "58.0";
 
-    return new AppConfiguration(bulkApiMaxWaitSec, bulkApiPollIntervalSec, stopOnError, rollbackOnError, apiVersion);
+    return new AppConfiguration(processingType, bulkApiMaxWaitSec, bulkApiPollIntervalSec, stopOnError, rollbackOnError, apiVersion);
   }
 
   private static parseSheets(sheetsData: any[]): SheetConf[] {

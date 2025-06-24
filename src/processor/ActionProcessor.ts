@@ -6,6 +6,7 @@ import { SalesforceBulkApiLoader } from '../salesforce/SalesforceBulkApiLoader';
 import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
 import { ImportAction } from '../model/ImportAction';
 import { SheetField } from '../model/SheetField';
+import { SalesforceApiLoader } from '../salesforce/SalesforceApiLoader';
 
 const ROLLBACK_ACTION_PREFIX = 'Rollback - ';
 export class ActionProcessor {
@@ -132,13 +133,24 @@ export class ActionProcessor {
       if (!conn || !conn.accessToken) {
         throw new Error('Salesforce authentication failed. No connection object returned.');
       }
-      const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
-      const exportDataSheet = await apiBulkLoader.bulkApiQuery(
-        conn.instanceUrl,
-        conn.accessToken,
-        action.exportAction,
-        outputSheetName
-      );
+      let exportDataSheet;
+      if (execConf.appConfiguration.processingType == "api") {
+        const apiBulkLoader = new SalesforceApiLoader(execConf.appConfiguration);
+        exportDataSheet = await apiBulkLoader.apiQuery(
+          conn.instanceUrl,
+          conn.accessToken,
+          action.exportAction,
+          outputSheetName
+        );
+      } else {
+        const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
+        exportDataSheet = await apiBulkLoader.bulkApiQuery(
+          conn.instanceUrl,
+          conn.accessToken,
+          action.exportAction,
+          outputSheetName
+        );
+      }
 
       // Overwrite or merge the output sheet
       if (sheetsData[outputSheetName]) {
@@ -212,8 +224,6 @@ export class ActionProcessor {
         throw new Error('Salesforce authentication failed. No connection object returned.');
       }
 
-      const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
-
       // If outputSheetName is defined and different from inputSheetName, clone the input sheet for output
       let importDataSheet: DataSheet = dataSheet;
       if (outputSheetName && outputSheetName !== inputSheetName) {
@@ -221,12 +231,24 @@ export class ActionProcessor {
         sheetsData[outputSheetName] = importDataSheet;
       }
 
-      let resultSheet = await apiBulkLoader.bulkApiOperation(
-        conn.instanceUrl,
-        conn.accessToken,
-        action.importAction,
-        importDataSheet
-      );
+      let resultSheet;
+      if (execConf.appConfiguration.processingType == "api") {
+        const apiBulkLoader = new SalesforceApiLoader(execConf.appConfiguration);
+        resultSheet = await apiBulkLoader.apiOperation(
+          conn.instanceUrl,
+          conn.accessToken,
+          action.importAction,
+          importDataSheet
+        );
+      } else {
+        const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
+        resultSheet = await apiBulkLoader.bulkApiOperation(
+          conn.instanceUrl,
+          conn.accessToken,
+          action.importAction,
+          importDataSheet
+        );
+      }
 
       console.log(`Data loading for sheet "${outputSheetName}" completed${resultSheet ? '' : ' with errors'}.`);
 
