@@ -118,85 +118,66 @@ export class SalesforceApiLoader {
 
       let hasErrors = false;
 
-      // Process in batches of 500
+      // Process in batches of 200 (sObject Collections API limit)
       for (let i = 0; i < records.length; i += MAX_COMPOSITE_BATCH_SIZE) {
         const batch = records.slice(i, i + MAX_COMPOSITE_BATCH_SIZE);
 
-        // Build compositeRequest array
-        const compositeRequest = batch.map((record, idx) => {
-          let method = '';
-          let url = `/services/data/v${this.appConfiguration.apiVersion}`;
-          let body = {};
-          let referenceId = `ref${importAction.objectName}${i + idx}`;
-
-          switch (importAction.action) {
-            case 'insert':
-              method = 'POST';
-              url += `/sobjects/${importAction.objectName}`;
-              body = record;
-              break;
-            case 'update':
-              method = 'PATCH';
-              url += `/sobjects/${importAction.objectName}/${record[ID_COLUMN]}`;
-              body = record;
-              break;
-            case 'upsert':
-              method = 'PATCH';
-              url += `/sobjects/${importAction.objectName}/${importAction.uniqueField}/${record[importAction.uniqueField]}`;
-              body = record;
-              break;
-            case 'delete':
-              method = 'DELETE';
-              url += `/sobjects/${importAction.objectName}/${record[ID_COLUMN]}`;
-              body = {};
-              break;
-          }
-
-          return {
-            method,
-            url,
-            referenceId,
-            ...(method !== 'DELETE' ? { body } : {})
+        // Include the object for each 
+        batch.forEach(batchRecord => {
+          batchRecord.attributes = {
+            type: importAction.objectName
           };
-        });
+        })
+
+        let url = '';
+        let method = '';
+        let body: any = {};
+
+        switch (importAction.action) {
+          case 'insert':
+            url = `/composite/sobjects`;
+            method = 'POST';
+            body = { allOrNone: true, records: batch };
+            break;
+          case 'update':
+            url = `/composite/sobjects`;
+            method = 'PATCH';
+            body = { allOrNone: true, records: batch };
+            break;
+          case 'upsert':
+            url = `/composite/sobjects/${importAction.objectName}/${importAction.uniqueField}`;
+            method = 'PATCH';
+            body = { allOrNone: true, records: batch };
+            break;
+          case 'delete':
+            url = `/composite/sobjects`;
+            method = 'DELETE';
+            body = { ids: batch.map(r => r[ID_COLUMN]) };
+            break;
+        }
 
         let response;
         try {
-          response = await axiosInstance.post(
-            '/composite',
-            { compositeRequest, allOrNone: false }
-          );
+          response = await axiosInstance.request({
+            url,
+            method,
+            data: body,
+          });
         } catch (error: any) {
           const errorDetails = this.readApiErrors(error);
-          throw new Error(`Error during Composite API ${importAction.action} operation: ${errorDetails}`);
+          throw new Error(`Error during sObject Collections API ${importAction.action} operation: ${errorDetails}`);
         }
 
         // Process results
-        const data: any = response.data;
-        if (Array.isArray(data.compositeResponse)) {
-          data.compositeResponse.forEach((res: any, idx: number) => {
+        const results = Array.isArray(response.data) ? response.data : response.data.results;
+        if (Array.isArray(results)) {
+          results.forEach((res: any, idx: number) => {
             const dataIdx = i + idx;
-            // For insert, set the returned Id
-            if (importAction.action === 'insert' && res.body && res.body.id && idColIdx !== -1) {
-              dataSheet.data[dataIdx][idColIdx] = res.body.id;
+            if (importAction.action === 'insert' && res.success && res.id && idColIdx !== -1) {
+              dataSheet.data[dataIdx][idColIdx] = res.id;
             }
-            // For errors, res.body is an array of error objects
-            if (
-              res.httpStatusCode >= 400 &&
-              Array.isArray(res.body) &&
-              res.body.length > 0
-            ) {
-              dataSheet.data[dataIdx][errorColIdx] = res.body.map((e: any) => e.message).join(' | ');
-              hasErrors = true;
-            }
-            // For upsert/update, errors may also be in res.body.errors
-            if (
-              (importAction.action === 'update' || importAction.action === 'upsert') &&
-              res.body &&
-              Array.isArray(res.body.errors) &&
-              res.body.errors.length > 0
-            ) {
-              dataSheet.data[dataIdx][errorColIdx] = res.body.errors.map((e: any) => e.message).join(' | ');
+            if (!res.success && res.errors && res.errors.length > 0) {
+              dataSheet.data[dataIdx][errorColIdx] = res.errors.map((e: any) => e.message).join(' | ');
               hasErrors = true;
             }
           });
@@ -206,7 +187,7 @@ export class SalesforceApiLoader {
       return !hasErrors;
     } catch (error: any) {
       const errorDetails = this.readApiErrors(error);
-      throw new Error(`Error during Composite API ${importAction.action} operation: ${errorDetails}`);
+      throw new Error(`Error during sObject Collections API ${importAction.action} operation: ${errorDetails}`);
     }
   }
 
