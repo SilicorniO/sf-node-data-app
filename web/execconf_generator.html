@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ExecConf YAML Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- js-yaml library for parsing YAML -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 1.5rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #1f2937;
+            margin-bottom: 1.25rem;
+            font-size: 2rem;
+        }
+        h2 {
+            color: #1f2937;
+            margin-bottom: 1.25rem;
+            font-size: 1.25rem;
+        }
+        h3 {
+            font-size: 1rem;
+        }
+        h4 {
+            font-size: 0.95rem;
+        }
+        .form-section {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background-color: #f9fafb;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        .form-group {
+            margin-bottom: 0.75rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-weight: 600;
+            color: #4b5563;
+            font-size: 0.85rem;
+        }
+        input[type="text"],
+        input[type="number"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            color: #374151;
+            background-color: #ffffff;
+            transition: border-color 0.2s ease-in-out;
+            height: 2.25rem;
+        }
+        textarea {
+            height: 8rem; /* Default height for textarea */
+            min-height: 4rem; /* Minimum height for textarea */
+        }
+        input[type="checkbox"] {
+            margin-right: 0.5rem;
+        }
+        .btn {
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-primary {
+            background-color: #2563eb;
+            color: #ffffff;
+        }
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+            transform: translateY(-1px);
+        }
+        .btn-secondary {
+            background-color: #6b7280;
+            color: #ffffff;
+        }
+        .btn-secondary:hover {
+            background-color: #4b5563;
+            transform: translateY(-1px);
+        }
+        .btn-danger {
+            background-color: #dc2626;
+            color: #ffffff;
+        }
+        .btn-danger:hover {
+            background-color: #b91c1c;
+            transform: translateY(-1px);
+        }
+        .add-btn {
+            background-color: #10b981;
+            color: #ffffff;
+            margin-top: 0.75rem;
+        }
+        .add-btn:hover {
+            background-color: #059669;
+        }
+        .action-card, .sheet-card {
+            background-color: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+        }
+        .action-card-header, .sheet-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .action-type-select {
+            margin-bottom: 0.75rem;
+        }
+        .output-yaml {
+            background-color: #1f2937;
+            color: #e5e7eb;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            min-height: 150px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+        }
+
+        /* Tab styles */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 1.25rem;
+        }
+        .tab-button {
+            padding: 0.6rem 1.2rem;
+            cursor: pointer;
+            border: 1px solid transparent;
+            border-bottom: none;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            background-color: #f9fafb;
+            color: #4b5563;
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+            font-size: 0.9rem;
+        }
+        .tab-button:hover {
+            background-color: #e5e7eb;
+        }
+        .tab-button.active {
+            background-color: #ffffff;
+            border-color: #e5e7eb;
+            border-bottom-color: #ffffff;
+            color: #1f2937;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        /* View/Edit Mode Styles */
+        .view-mode-content {
+            display: block;
+            padding: 0.25rem 0;
+        }
+        .edit-mode-content {
+            display: none;
+        }
+        [data-mode="edit"] .view-mode-content {
+            display: none;
+        }
+        [data-mode="edit"] .edit-mode-content {
+            display: block;
+        }
+        .view-field {
+            padding: 0.1rem 0.3rem;
+            font-size: 0.8rem;
+            background-color: #e2e8f0;
+            border-radius: 4px;
+            margin-bottom: 0.2rem;
+            word-break: break-all;
+        }
+        .view-field-label {
+            font-weight: 600;
+            color: #4b5563;
+            font-size: 0.7rem;
+            margin-bottom: 0.05rem;
+            display: block;
+        }
+        .view-table-row {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.3rem;
+            align-items: center;
+            margin-bottom: 0.1rem;
+        }
+        .view-table-row .view-field-label {
+            margin-bottom: 0;
+            padding-right: 0.2rem;
+        }
+        .view-table-row .view-field {
+            margin-bottom: 0;
+            padding: 0.1rem 0.3rem;
+        }
+        .view-section-header {
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.3rem;
+            color: #1f2937;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center mb-8">ExecConf YAML Generator</h1>
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-button active" onclick="openTab(event, 'appConfigTab')">App Configuration</button>
+            <button class="tab-button" onclick="openTab(event, 'sheetsTab')">Sheets</button>
+            <button class="tab-button" onclick="openTab(event, 'actionsTab')">Actions</button>
+        </div>
+
+        <!-- Tab Content: App Configuration Section -->
+        <div id="appConfigTab" class="tab-content active form-section">
+            <h2 class="text-xl font-semibold">App Configuration</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div class="form-group">
+                    <label for="processingType">Processing Type:</label>
+                    <select id="processingType" class="rounded-md">
+                        <option value="bulk">bulk</option>
+                        <option value="api">api</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="bulkApiMaxWaitSec">Bulk API Max Wait (seconds):</label>
+                    <input type="number" id="bulkApiMaxWaitSec" value="600" class="rounded-md">
+                </div>
+                <div class="form-group">
+                    <label for="bulkApiPollIntervalSec">Bulk API Poll Interval (seconds):</label>
+                    <input type="number" id="bulkApiPollIntervalSec" value="5" class="rounded-md">
+                </div>
+                <div class="form-group flex items-center">
+                    <input type="checkbox" id="stopOnError" checked class="rounded-md">
+                    <label for="stopOnError" class="mb-0">Stop On Error</label>
+                </div>
+                <div class="form-group flex items-center">
+                    <input type="checkbox" id="rollbackOnError" class="rounded-md">
+                    <label for="rollbackOnError" class="mb-0">Rollback On Error</label>
+                </div>
+                <div class="form-group">
+                    <label for="apiVersion">API Version:</label>
+                    <input type="text" id="apiVersion" value="56.0" class="rounded-md">
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Content: Sheets Section -->
+        <div id="sheetsTab" class="tab-content form-section">
+            <h2 class="text-xl font-semibold">Sheets</h2>
+            <div id="sheetsContainer">
+                <!-- Sheet cards will be appended here -->
+            </div>
+            <button type="button" class="btn add-btn rounded-md" onclick="addSheet()">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+            </button>
+        </div>
+
+        <!-- Tab Content: Actions Section -->
+        <div id="actionsTab" class="tab-content form-section">
+            <h2 class="text-xl font-semibold">Actions</h2>
+            <div id="actionsContainer">
+                <!-- Action cards will be appended here -->
+            </div>
+            <button type="button" class="btn add-btn rounded-md" onclick="addAction()">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+            </button>
+        </div>
+
+        <!-- Generate YAML Button -->
+        <div class="text-center mt-8">
+            <button type="button" class="btn btn-primary rounded-md" onclick="generateYaml()">Generate YAML</button>
+        </div>
+
+        <!-- YAML Output Section -->
+        <div class="form-section mt-8">
+            <h2 class="text-xl font-semibold">Generated YAML</h2>
+            <pre id="yamlOutput" class="output-yaml rounded-md"></pre>
+            <div class="flex items-center space-x-4 mt-4">
+                <button type="button" class="btn btn-secondary rounded-md" onclick="copyToClipboard()">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                </button>
+                <input type="file" id="yamlFileInput" accept=".yaml,.yml" class="hidden" onchange="loadYamlFile()">
+                <button type="button" class="btn btn-secondary rounded-md" onclick="document.getElementById('yamlFileInput').click()">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                </button>
+            </div>
+
+            <h2 class="text-xl font-semibold mt-8">Load YAML from Text</h2>
+            <div class="form-group">
+                <label for="yamlTextInput">Paste YAML Configuration Here:</label>
+                <textarea id="yamlTextInput" class="rounded-md" placeholder="Paste your YAML configuration here..."></textarea>
+            </div>
+            <button type="button" class="btn btn-primary rounded-md" onclick="loadYamlFromTextarea()">Load from Text</button>
+        </div>
+    </div>
+
+    <script>
+        let actionCounter = 0;
+        let sheetCounter = 0;
+
+        // Helper function to create elements
+        function createElement(tag, classes = [], attributes = {}, innerHTML = '') {
+            const el = document.createElement(tag);
+            if (classes.length) el.classList.add(...classes);
+            for (const key in attributes) {
+                el.setAttribute(key, attributes[key]);
+            }
+            el.innerHTML = innerHTML;
+            return el;
+        }
+
+        // Tab switching logic
+        function openTab(evt, tabName) {
+            // Declare all variables
+            let i, tabcontent, tablinks;
+
+            // Get all elements with class="tab-content" and hide them
+            tabcontent = document.getElementsByClassName("tab-content");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+                tabcontent[i].classList.remove('active');
+            }
+
+            // Get all elements with class="tab-button" and remove the class "active"
+            tablinks = document.getElementsByClassName("tab-button");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].classList.remove("active");
+            }
+
+            // Show the current tab, and add an "active" class to the button that opened the tab
+            document.getElementById(tabName).style.display = "block";
+            document.getElementById(tabName).classList.add('active');
+            evt.currentTarget.classList.add("active");
+        }
+
+        // Toggles between view and edit mode for a given element
+        function toggleEditMode(elementId, mode = null) {
+            const element = document.getElementById(elementId);
+            if (!element) return;
+
+            const currentMode = element.getAttribute('data-mode');
+            const newMode = mode || (currentMode === 'view' ? 'edit' : 'view');
+            element.setAttribute('data-mode', newMode);
+
+            // If switching to view mode, update the displayed text
+            if (newMode === 'view') {
+                saveElement(elementId); // This function will update view fields
+            }
+        }
+
+        // Saves the data from edit fields to view fields and switches to view mode
+        function saveElement(elementId) {
+            const element = document.getElementById(elementId);
+            if (!element) return;
+
+            // Update Action Card View
+            if (element.classList.contains('action-card')) {
+                const name = document.getElementById(`actionName-${elementId.split('-')[1]}`).value;
+                const inputSheet = document.getElementById(`inputSheet-${elementId.split('-')[1]}`).value;
+                const outputSheet = document.getElementById(`outputSheet-${elementId.split('-')[1]}`).value || inputSheet;
+                const waitStartingTime = document.getElementById(`waitStartingTime-${elementId.split('-')[1]}`).value;
+                const actionType = document.getElementById(`actionType-${elementId.split('-')[1]}`).value;
+
+                element.querySelector('.view-action-name').textContent = name || 'N/A';
+                element.querySelector('.view-input-sheet').textContent = inputSheet || 'N/A';
+                element.querySelector('.view-output-sheet').textContent = outputSheet || 'N/A';
+                element.querySelector('.view-wait-starting-time').textContent = waitStartingTime || '0';
+                element.querySelector('.view-action-type').textContent = actionType ? `${actionType.charAt(0).toUpperCase() + actionType.slice(1)} Action` : 'None Selected';
+
+                // Update specific action view fields
+                const specificActionViewContainer = element.querySelector('.view-specific-action-fields');
+                specificActionViewContainer.innerHTML = ''; // Clear previous content
+
+                if (actionType === 'transform') {
+                    const fieldsConf = [];
+                    element.querySelectorAll(`#transformFields-${elementId.split('-')[1]} .form-group`).forEach(fieldGroup => {
+                        const fieldName = fieldGroup.querySelector('input[id^="transformFieldName-"]').value;
+                        const transformation = fieldGroup.querySelector('input[id^="transformTransformation-"]').value;
+                        if (fieldName && transformation) {
+                            fieldsConf.push({ name: fieldName, transformation: transformation });
+                        }
+                    });
+                    if (fieldsConf.length > 0) {
+                        specificActionViewContainer.innerHTML += `<div class="view-section-header">Transform Fields:</div>`;
+                        fieldsConf.forEach(field => {
+                            specificActionViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Name:</span><span class="view-field">${field.name}</span><span class="view-field-label">Transformation:</span><span class="view-field">${field.transformation}</span></div>`;
+                        });
+                    }
+                } else if (actionType === 'import') {
+                    const objectName = document.getElementById(`importObjectName-${elementId.split('-')[1]}`).value;
+                    const uniqueField = document.getElementById(`importUniqueField-${elementId.split('-')[1]}`).value;
+                    const importAction = document.getElementById(`importActionType-${elementId.split('-')[1]}`).value;
+                    const importFields = [];
+                    element.querySelectorAll(`#importFields-${elementId.split('-')[1]} input[id^="importFieldName-"]`).forEach(input => {
+                        if (input.value) importFields.push(input.value);
+                    });
+                    specificActionViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Object Name:</span><span class="view-field">${objectName || 'N/A'}</span></div>`;
+                    specificActionViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Unique Field:</span><span class="view-field">${uniqueField || 'N/A'}</span></div>`;
+                    specificActionViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Action:</span><span class="view-field">${importAction || 'N/A'}</span></div>`;
+                    if (importFields.length > 0) {
+                        specificActionViewContainer.innerHTML += `<div class="view-section-header">Import Fields:</div>`;
+                        importFields.forEach(field => {
+                            specificActionViewContainer.innerHTML += `<div class="view-field">${field}</div>`;
+                        });
+                    }
+                } else if (actionType === 'export') {
+                    const query = document.getElementById(`exportQuery-${elementId.split('-')[1]}`).value;
+                    const uniqueField = document.getElementById(`exportUniqueField-${elementId.split('-')[1]}`).value;
+                    specificActionViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Query:</span><span class="view-field">${query || 'N/A'}</span></div>`;
+                    if (uniqueField) {
+                        specificActionViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Unique Field:</span><span class="view-field">${uniqueField || 'N/A'}</span></div>`;
+                    }
+                } else if (actionType === 'copySheet') {
+                    const copyFields = [];
+                    element.querySelectorAll(`#copySheetFields-${elementId.split('-')[1]} .form-group`).forEach(fieldGroup => {
+                        const fieldName = fieldGroup.querySelector('input[id^="copySheetFieldName-"]').value;
+                        const fieldType = fieldGroup.querySelector('input[id^="copySheetFieldType-"]').value;
+                        if (fieldName) {
+                            copyFields.push({name: fieldName, type: fieldType});
+                        }
+                    });
+                    const uniqueField = document.getElementById(`copySheetUniqueField-${elementId.split('-')[1]}`).value;
+                    const condition = document.getElementById(`copySheetCondition-${elementId.split('-')[1]}`).value;
+
+                    if (copyFields.length > 0) {
+                        specificActionViewContainer.innerHTML += `<div class="view-section-header">Copy Fields:</div>`;
+                        copyFields.forEach(field => {
+                            specificActionViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Name:</span><span class="view-field">${field.name}</span><span class="view-field-label">Type:</span><span class="view-field">${field.type || 'N/A'}</span></div>`;
+                        });
+                    }
+                    if (uniqueField) {
+                        specificActionViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Unique Field:</span><span class="view-field">${uniqueField || 'N/A'}</span></div>`;
+                    }
+                    if (condition) {
+                        specificActionViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Condition:</span><span class="view-field">${condition || 'N/A'}</span></div>`;
+                    }
+                }
+            }
+            // Update Sheet Card View
+            else if (element.classList.contains('sheet-card')) {
+                const name = document.getElementById(`sheetName-${elementId.split('-')[1]}`).value;
+                element.querySelector('.view-sheet-name').textContent = name || 'N/A';
+
+                const sheetFieldsViewContainer = element.querySelector('.view-sheet-fields');
+                sheetFieldsViewContainer.innerHTML = '';
+                const fields = [];
+                element.querySelectorAll(`#sheetFields-${elementId.split('-')[1]} .form-group`).forEach(fieldGroup => {
+                    const fieldName = fieldGroup.querySelector('input[id^="sheetFieldName-"]').value;
+                    const fieldType = fieldGroup.querySelector('input[id^="sheetFieldType-"]').value;
+                    if (fieldName) {
+                        fields.push({name: fieldName, type: fieldType});
+                    }
+                });
+                if (fields.length > 0) {
+                    sheetFieldsViewContainer.innerHTML += `<div class="view-section-header">Fields:</div>`;
+                    fields.forEach(field => {
+                        sheetFieldsViewContainer.innerHTML += `<div class="view-table-row"><span class="view-field-label">Name:</span><span class="view-field">${field.name}</span><span class="view-field-label">Type:</span><span class="view-field">${field.type || 'N/A'}</span></div>`;
+                    });
+                }
+            }
+
+            toggleEditMode(elementId, 'view');
+        }
+
+        // Add Action
+        function addAction(actionData = {}) {
+            actionCounter++;
+            const actionsContainer = document.getElementById('actionsContainer');
+            const actionCard = createElement('div', ['action-card'], { id: `action-${actionCounter}`, 'data-mode': actionData.name ? 'view' : 'edit' });
+
+            actionCard.innerHTML = `
+                <div class="action-card-header">
+                    <h3 class="text-lg font-medium">Action <span class="view-action-name">${actionData.name || actionCounter}</span></h3>
+                    <div class="flex space-x-2">
+                        <button type="button" class="btn btn-secondary rounded-md view-mode-content" onclick="toggleEditMode('action-${actionCounter}', 'edit')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                        </button>
+                        <button type="button" class="btn btn-primary rounded-md edit-mode-content" onclick="saveElement('action-${actionCounter}')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                        </button>
+                        <button type="button" class="btn btn-danger rounded-md" onclick="removeElement('action-${actionCounter}')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="view-mode-content">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-0.5"> <!-- Adjusted gap -->
+                        <div class="form-group">
+                            <div class="view-table-row">
+                                <span class="view-field-label">Name:</span><span class="view-field view-action-name">${actionData.name || 'N/A'}</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="view-table-row">
+                                <span class="view-field-label">Input Sheet:</span><span class="view-field view-input-sheet">${actionData.inputSheet || 'N/A'}</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="view-table-row">
+                                <span class="view-field-label">Output Sheet:</span><span class="view-field view-output-sheet">${actionData.outputSheet || actionData.inputSheet || 'N/A'}</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="view-table-row">
+                                <span class="view-field-label">Wait Starting Time (s):</span><span class="view-field view-wait-starting-time">${actionData.waitStartingTime || 0}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group action-type-select">
+                        <div class="view-table-row">
+                            <span class="view-field-label">Action Type:</span><span class="view-field view-action-type">${actionData.transformAction ? 'Transform Action' : actionData.importAction ? 'Import Action' : actionData.exportAction ? 'Export Action' : actionData.copySheetAction ? 'Copy Sheet Action' : 'None Selected'}</span>
+                        </div>
+                    </div>
+                    <div class="view-specific-action-fields"></div>
+                </div>
+
+                <div class="edit-mode-content">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="form-group">
+                            <label for="actionName-${actionCounter}">Name:</label>
+                            <input type="text" id="actionName-${actionCounter}" class="rounded-md" value="${actionData.name || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="inputSheet-${actionCounter}">Input Sheet:</label>
+                            <input type="text" id="inputSheet-${actionCounter}" class="rounded-md" value="${actionData.inputSheet || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="outputSheet-${actionCounter}">Output Sheet (optional, defaults to Input Sheet):</label>
+                            <input type="text" id="outputSheet-${actionCounter}" class="rounded-md" value="${actionData.outputSheet || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="waitStartingTime-${actionCounter}">Wait Starting Time (seconds):</label>
+                            <input type="number" id="waitStartingTime-${actionCounter}" value="${actionData.waitStartingTime || 0}" class="rounded-md">
+                        </div>
+                    </div>
+                    <div class="form-group action-type-select">
+                        <label for="actionType-${actionCounter}">Action Type:</label>
+                        <select id="actionType-${actionCounter}" class="rounded-md" onchange="updateActionFields(${actionCounter})">
+                            <option value="">-- Select Action Type --</option>
+                            <option value="transform">Transform Action</option>
+                            <option value="import">Import Action</option>
+                            <option value="export">Export Action</option>
+                            <option value="copySheet">Copy Sheet Action</option>
+                        </select>
+                    </div>
+                    <div id="actionFields-${actionCounter}">
+                        <!-- Specific action fields will be loaded here -->
+                    </div>
+                </div>
+            `;
+            actionsContainer.appendChild(actionCard);
+
+            // Set the selected action type and update fields if data is provided
+            if (actionData.transformAction) {
+                document.getElementById(`actionType-${actionCounter}`).value = 'transform';
+                updateActionFields(actionCounter, actionData.transformAction);
+            } else if (actionData.importAction) {
+                document.getElementById(`actionType-${actionCounter}`).value = 'import';
+                updateActionFields(actionCounter, actionData.importAction);
+            } else if (actionData.exportAction) {
+                document.getElementById(`actionType-${actionCounter}`).value = 'export';
+                updateActionFields(actionCounter, actionData.exportAction);
+            } else if (actionData.copySheetAction) {
+                document.getElementById(`actionType-${actionCounter}`).value = 'copySheet';
+                updateActionFields(actionCounter, actionData.copySheetAction);
+            }
+
+            // If it's a new action, focus on the name field
+            if (!actionData.name) {
+                document.getElementById(`actionName-${actionCounter}`).focus();
+            } else {
+                saveElement(`action-${actionCounter}`); // Immediately save to populate view fields
+            }
+        }
+
+        // Update Action Fields based on selected type
+        function updateActionFields(id, specificActionData = {}) {
+            const actionType = document.getElementById(`actionType-${id}`).value;
+            const actionFieldsContainer = document.getElementById(`actionFields-${id}`);
+            actionFieldsContainer.innerHTML = ''; // Clear previous fields
+
+            if (actionType === 'transform') {
+                actionFieldsContainer.innerHTML = `
+                    <h4 class="text-base font-medium mt-4 mb-2">Transform Action Configuration</h4>
+                    <div id="transformFields-${id}">
+                        <!-- Transform fields will be added here -->
+                    </div>
+                    <button type="button" class="btn add-btn rounded-md" onclick="addTransformField(${id})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    </button>
+                `;
+                if (specificActionData.fieldsConf && specificActionData.fieldsConf.length > 0) {
+                    specificActionData.fieldsConf.forEach(field => addTransformField(id, field));
+                } else {
+                    addTransformField(id); // Add one field by default
+                }
+            } else if (actionType === 'import') {
+                actionFieldsContainer.innerHTML = `
+                    <h4 class="text-base font-medium mt-4 mb-2">Import Action Configuration</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div class="form-group">
+                            <label for="importObjectName-${id}">Object Name:</label>
+                            <input type="text" id="importObjectName-${id}" class="rounded-md" value="${specificActionData.objectName || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="importUniqueField-${id}">Unique Field:</label>
+                            <input type="text" id="importUniqueField-${id}" class="rounded-md" value="${specificActionData.uniqueField || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="importActionType-${id}">Action:</label>
+                            <select id="importActionType-${id}" class="rounded-md">
+                                <option value="insert">insert</option>
+                                <option value="update">update</option>
+                                <option value="upsert">upsert</option>
+                                <option value="delete">delete</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="importFields-${id}">
+                        <!-- Import fields will be added here -->
+                    </div>
+                    <button type="button" class="btn add-btn rounded-md" onclick="addImportField(${id})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    </button>
+                `;
+                document.getElementById(`importActionType-${id}`).value = specificActionData.action || 'insert';
+                if (specificActionData.importFields && specificActionData.importFields.length > 0) {
+                    specificActionData.importFields.forEach(field => addImportField(id, field));
+                } else {
+                    addImportField(id); // Add one field by default
+                }
+            } else if (actionType === 'export') {
+                actionFieldsContainer.innerHTML = `
+                    <h4 class="text-base font-medium mt-4 mb-2">Export Action Configuration</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="form-group">
+                            <label for="exportQuery-${id}">Query:</label>
+                            <input type="text" id="exportQuery-${id}" class="rounded-md" value="${specificActionData.query || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="exportUniqueField-${id}">Unique Field (optional):</label>
+                            <input type="text" id="exportUniqueField-${id}" class="rounded-md" value="${specificActionData.uniqueField || ''}">
+                        </div>
+                    </div>
+                `;
+            } else if (actionType === 'copySheet') {
+                actionFieldsContainer.innerHTML = `
+                    <h4 class="text-base font-medium mt-4 mb-2">Copy Sheet Action Configuration</h4>
+                    <div id="copySheetFields-${id}">
+                        <!-- Copy Sheet fields will be added here -->
+                    </div>
+                    <button type="button" class="btn add-btn rounded-md" onclick="addCopySheetField(${id})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    </button>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                        <div class="form-group">
+                            <label for="copySheetUniqueField-${id}">Unique Field (optional):</label>
+                            <input type="text" id="copySheetUniqueField-${id}" class="rounded-md" value="${specificActionData.uniqueField || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="copySheetCondition-${id}">Condition (optional):</label>
+                            <input type="text" id="copySheetCondition-${id}" class="rounded-md" value="${specificActionData.condition || ''}">
+                        </div>
+                    </div>
+                `;
+                if (specificActionData.copyFields && specificActionData.copyFields.length > 0) {
+                    specificActionData.copyFields.forEach(field => addCopySheetField(id, field));
+                } else {
+                    addCopySheetField(id); // Add one field by default
+                }
+            }
+        }
+
+        // Add Transform Field
+        function addTransformField(actionId, fieldData = {}) {
+            const transformFieldsContainer = document.getElementById(`transformFields-${actionId}`);
+            const fieldIndex = transformFieldsContainer.children.length;
+            const fieldGroupId = `transformField-${actionId}-${fieldIndex}`;
+            const fieldGroup = createElement('div', ['form-group', 'grid', 'grid-cols-1', 'md:grid-cols-3', 'gap-2', 'items-end'], { id: fieldGroupId, 'data-mode': fieldData.name ? 'view' : 'edit' });
+
+            fieldGroup.innerHTML = `
+                <div class="view-mode-content col-span-full md:col-span-2">
+                    <div class="view-table-row">
+                        <span class="view-field-label">Name:</span><span class="view-field view-transform-field-name">${fieldData.name || 'N/A'}</span>
+                    </div>
+                    <div class="view-table-row">
+                        <span class="view-field-label">Transformation:</span><span class="view-field view-transform-transformation">${fieldData.transformation || 'N/A'}</span>
+                    </div>
+                </div>
+                <div class="edit-mode-content col-span-full md:col-span-2 grid grid-cols-2 gap-2">
+                    <div>
+                        <label for="transformFieldName-${actionId}-${fieldIndex}">Field Name:</label>
+                        <input type="text" id="transformFieldName-${actionId}-${fieldIndex}" class="rounded-md" value="${fieldData.name || ''}">
+                    </div>
+                    <div>
+                        <label for="transformTransformation-${actionId}-${fieldIndex}">Transformation:</label>
+                        <input type="text" id="transformTransformation-${actionId}-${fieldIndex}" class="rounded-md" value="${fieldData.transformation || ''}">
+                    </div>
+                </div>
+                <div class="col-span-full md:col-span-1 flex justify-end space-x-2">
+                    <button type="button" class="btn btn-secondary rounded-md view-mode-content" onclick="toggleEditMode('${fieldGroupId}', 'edit')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    </button>
+                    <button type="button" class="btn btn-primary rounded-md edit-mode-content" onclick="saveField('${fieldGroupId}', 'transform')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                    </button>
+                    <button type="button" class="btn btn-danger rounded-md" onclick="removeElement('${fieldGroupId}')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            `;
+            transformFieldsContainer.appendChild(fieldGroup);
+            if (fieldData.name) saveField(fieldGroupId, 'transform'); // Populate view fields if data exists
+        }
+
+        // Add Import Field
+        function addImportField(actionId, fieldName = '') {
+            const importFieldsContainer = document.getElementById(`importFields-${actionId}`);
+            const fieldIndex = importFieldsContainer.children.length;
+            const fieldGroupId = `importField-${actionId}-${fieldIndex}`;
+            const fieldGroup = createElement('div', ['form-group', 'grid', 'grid-cols-1', 'md:grid-cols-2', 'gap-2', 'items-end'], { id: fieldGroupId, 'data-mode': fieldName ? 'view' : 'edit' });
+
+            fieldGroup.innerHTML = `
+                <div class="view-mode-content col-span-full md:col-span-1">
+                    <div class="view-table-row">
+                        <span class="view-field-label">Import Field Name:</span><span class="view-field view-import-field-name">${fieldName || 'N/A'}</span>
+                    </div>
+                </div>
+                <div class="edit-mode-content col-span-full md:col-span-1">
+                    <label for="importFieldName-${actionId}-${fieldIndex}">Import Field Name:</label>
+                    <input type="text" id="importFieldName-${actionId}-${fieldIndex}" class="rounded-md" value="${fieldName || ''}">
+                </div>
+                <div class="col-span-full md:col-span-1 flex justify-end space-x-2">
+                    <button type="button" class="btn btn-secondary rounded-md view-mode-content" onclick="toggleEditMode('${fieldGroupId}', 'edit')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    </button>
+                    <button type="button" class="btn btn-primary rounded-md edit-mode-content" onclick="saveField('${fieldGroupId}', 'import')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                    </button>
+                    <button type="button" class="btn btn-danger rounded-md" onclick="this.parentNode.parentNode.remove()">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            `;
+            importFieldsContainer.appendChild(fieldGroup);
+            if (fieldName) saveField(fieldGroupId, 'import'); // Populate view fields if data exists
+        }
+
+        // Add Copy Sheet Field
+        function addCopySheetField(actionId, fieldData = {}) {
+            const copySheetFieldsContainer = document.getElementById(`copySheetFields-${actionId}`);
+            const fieldIndex = copySheetFieldsContainer.children.length;
+            const fieldGroupId = `copySheetField-${actionId}-${fieldIndex}`;
+            const fieldGroup = createElement('div', ['form-group', 'grid', 'grid-cols-1', 'md:grid-cols-3', 'gap-2', 'items-end'], { id: fieldGroupId, 'data-mode': fieldData.name ? 'view' : 'edit' });
+
+            fieldGroup.innerHTML = `
+                <div class="view-mode-content col-span-full md:col-span-2">
+                    <div class="view-table-row">
+                        <span class="view-field-label">Name:</span><span class="view-field view-copy-sheet-field-name">${fieldData.name || 'N/A'}</span>
+                    </div>
+                    <div class="view-table-row">
+                        <span class="view-field-label">Type:</span><span class="view-field view-copy-sheet-field-type">${fieldData.type || 'N/A'}</span>
+                    </div>
+                </div>
+                <div class="edit-mode-content col-span-full md:col-span-2 grid grid-cols-2 gap-2">
+                    <div>
+                        <label for="copySheetFieldName-${actionId}-${fieldIndex}">Field Name:</label>
+                        <input type="text" id="copySheetFieldName-${actionId}-${fieldIndex}" class="rounded-md" value="${fieldData.name || ''}">
+                    </div>
+                    <div>
+                        <label for="copySheetFieldType-${actionId}-${fieldIndex}">Field Type (optional):</label>
+                        <input type="text" id="copySheetFieldType-${actionId}-${fieldIndex}" class="rounded-md" value="${fieldData.type || ''}">
+                    </div>
+                </div>
+                <div class="col-span-full md:col-span-1 flex justify-end space-x-2">
+                    <button type="button" class="btn btn-secondary rounded-md view-mode-content" onclick="toggleEditMode('${fieldGroupId}', 'edit')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    </button>
+                    <button type="button" class="btn btn-primary rounded-md edit-mode-content" onclick="saveField('${fieldGroupId}', 'copySheet')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                    </button>
+                    <button type="button" class="btn btn-danger rounded-md" onclick="removeElement('${fieldGroupId}')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            `;
+            copySheetFieldsContainer.appendChild(fieldGroup);
+            if (fieldData.name) saveField(fieldGroupId, 'copySheet'); // Populate view fields if data exists
+        }
+
+        // Add Sheet
+        function addSheet(sheetData = {}) {
+            sheetCounter++;
+            const sheetsContainer = document.getElementById('sheetsContainer');
+            const sheetCard = createElement('div', ['sheet-card'], { id: `sheet-${sheetCounter}`, 'data-mode': sheetData.name ? 'view' : 'edit' });
+
+            sheetCard.innerHTML = `
+                <div class="sheet-card-header">
+                    <h3 class="text-lg font-medium">Sheet <span class="view-sheet-name">${sheetData.name || sheetCounter}</span></h3>
+                    <div class="flex space-x-2">
+                        <button type="button" class="btn btn-secondary rounded-md view-mode-content" onclick="toggleEditMode('sheet-${sheetCounter}', 'edit')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                        </button>
+                        <button type="button" class="btn btn-primary rounded-md edit-mode-content" onclick="saveElement('sheet-${sheetCounter}')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                        </button>
+                        <button type="button" class="btn btn-danger rounded-md" onclick="removeElement('sheet-${sheetCounter}')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="view-mode-content">
+                    <div class="form-group">
+                        <div class="view-table-row">
+                            <span class="view-field-label">Name:</span><span class="view-field view-sheet-name">${sheetData.name || 'N/A'}</span>
+                        </div>
+                    </div>
+                    <div class="view-sheet-fields"></div>
+                </div>
+
+                <div class="edit-mode-content">
+                    <div class="form-group">
+                        <label for="sheetName-${sheetCounter}">Name:</label>
+                        <input type="text" id="sheetName-${sheetCounter}" class="rounded-md" value="${sheetData.name || ''}">
+                    </div>
+                    <div id="sheetFields-${sheetCounter}">
+                        <!-- Sheet fields will be added here -->
+                    </div>
+                    <button type="button" class="btn add-btn rounded-md" onclick="addSheetField(${sheetCounter})">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    </button>
+                </div>
+            `;
+            sheetsContainer.appendChild(sheetCard);
+
+            if (sheetData.fields && sheetData.fields.length > 0) {
+                sheetData.fields.forEach(field => addSheetField(sheetCounter, field));
+            } else {
+                addSheetField(sheetCounter); // Add one field by default
+            }
+
+            // If it's a new sheet, focus on the name field
+            if (!sheetData.name) {
+                document.getElementById(`sheetName-${sheetCounter}`).focus();
+            } else {
+                saveElement(`sheet-${sheetCounter}`); // Immediately save to populate view fields
+            }
+        }
+
+        // Add Sheet Field
+        function addSheetField(sheetId, fieldData = {}) {
+            const sheetFieldsContainer = document.getElementById(`sheetFields-${sheetId}`);
+            const fieldIndex = sheetFieldsContainer.children.length;
+            const fieldGroupId = `sheetField-${sheetId}-${fieldIndex}`;
+            const fieldGroup = createElement('div', ['form-group', 'grid', 'grid-cols-1', 'md:grid-cols-3', 'gap-2', 'items-end'], { id: fieldGroupId, 'data-mode': fieldData.name ? 'view' : 'edit' });
+
+            fieldGroup.innerHTML = `
+                <div class="view-mode-content col-span-full md:col-span-2">
+                    <div class="view-table-row">
+                        <span class="view-field-label">Name:</span><span class="view-field view-sheet-field-name">${fieldData.name || 'N/A'}</span>
+                    </div>
+                    <div class="view-table-row">
+                        <span class="view-field-label">Type:</span><span class="view-field view-sheet-field-type">${fieldData.type || 'N/A'}</span>
+                    </div>
+                </div>
+                <div class="edit-mode-content col-span-full md:col-span-2 grid grid-cols-2 gap-2">
+                    <div>
+                        <label for="sheetFieldName-${sheetId}-${fieldIndex}">Field Name:</label>
+                        <input type="text" id="sheetFieldName-${sheetId}-${fieldIndex}" class="rounded-md" value="${fieldData.name || ''}">
+                    </div>
+                    <div>
+                        <label for="sheetFieldType-${sheetId}-${fieldIndex}">Field Type (optional):</label>
+                        <input type="text" id="sheetFieldType-${sheetId}-${fieldIndex}" class="rounded-md" value="${fieldData.type || ''}">
+                    </div>
+                </div>
+                <div class="col-span-full md:col-span-1 flex justify-end space-x-2">
+                    <button type="button" class="btn btn-secondary rounded-md view-mode-content" onclick="toggleEditMode('${fieldGroupId}', 'edit')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    </button>
+                    <button type="button" class="btn btn-primary rounded-md edit-mode-content" onclick="saveField('${fieldGroupId}', 'sheet')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                    </button>
+                    <button type="button" class="btn btn-danger rounded-md" onclick="removeElement('${fieldGroupId}')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            `;
+            sheetFieldsContainer.appendChild(fieldGroup);
+            if (fieldData.name) saveField(fieldGroupId, 'sheet'); // Populate view fields if data exists
+        }
+
+        // Saves the data from edit fields to view fields for nested fields
+        function saveField(fieldGroupId, type) {
+            const fieldGroup = document.getElementById(fieldGroupId);
+            if (!fieldGroup) return;
+
+            if (type === 'transform') {
+                const name = document.getElementById(`transformFieldName-${fieldGroupId.split('-')[1]}-${fieldGroupId.split('-')[2]}`).value;
+                const transformation = document.getElementById(`transformTransformation-${fieldGroupId.split('-')[1]}-${fieldGroupId.split('-')[2]}`).value;
+                fieldGroup.querySelector('.view-transform-field-name').textContent = name || 'N/A';
+                fieldGroup.querySelector('.view-transform-transformation').textContent = transformation || 'N/A';
+            } else if (type === 'import') {
+                const name = document.getElementById(`importFieldName-${fieldGroupId.split('-')[1]}-${fieldGroupId.split('-')[2]}`).value;
+                fieldGroup.querySelector('.view-import-field-name').textContent = name || 'N/A';
+            } else if (type === 'copySheet') {
+                const name = document.getElementById(`copySheetFieldName-${fieldGroupId.split('-')[1]}-${fieldGroupId.split('-')[2]}`).value;
+                const typeVal = document.getElementById(`copySheetFieldType-${fieldGroupId.split('-')[1]}-${fieldGroupId.split('-')[2]}`).value;
+                fieldGroup.querySelector('.view-copy-sheet-field-name').textContent = name || 'N/A';
+                fieldGroup.querySelector('.view-copy-sheet-field-type').textContent = typeVal || 'N/A';
+            } else if (type === 'sheet') {
+                const name = document.getElementById(`sheetFieldName-${fieldGroupId.split('-')[1]}-${fieldGroupId.split('-')[2]}`).value;
+                const typeVal = document.getElementById(`sheetFieldType-${fieldGroupId.split('-')[1]}-${fieldGroupId.split('-')[2]}`).value;
+                fieldGroup.querySelector('.view-sheet-field-name').textContent = name || 'N/A';
+                fieldGroup.querySelector('.view-sheet-field-type').textContent = typeVal || 'N/A';
+            }
+            toggleEditMode(fieldGroupId, 'view');
+        }
+
+
+        // Remove element
+        function removeElement(id) {
+            document.getElementById(id).remove();
+        }
+
+        // Generate YAML
+        function generateYaml() {
+            const appConfiguration = {
+                processingType: document.getElementById('processingType').value,
+                bulkApiMaxWaitSec: parseInt(document.getElementById('bulkApiMaxWaitSec').value),
+                bulkApiPollIntervalSec: parseInt(document.getElementById('bulkApiPollIntervalSec').value),
+                stopOnError: document.getElementById('stopOnError').checked,
+                rollbackOnError: document.getElementById('rollbackOnError').checked,
+                apiVersion: document.getElementById('apiVersion').value,
+            };
+
+            const actions = [];
+            document.querySelectorAll('.action-card').forEach(card => {
+                const id = card.id.split('-')[1];
+                const action = {
+                    name: document.getElementById(`actionName-${id}`).value,
+                    inputSheet: document.getElementById(`inputSheet-${id}`).value,
+                    outputSheet: document.getElementById(`outputSheet-${id}`).value || document.getElementById(`inputSheet-${id}`).value,
+                    waitStartingTime: parseInt(document.getElementById(`waitStartingTime-${id}`).value),
+                };
+
+                const actionType = document.getElementById(`actionType-${id}`).value;
+                if (actionType === 'transform') {
+                    const fieldsConf = [];
+                    document.querySelectorAll(`#transformFields-${id} .form-group`).forEach(fieldGroup => {
+                        const fieldName = fieldGroup.querySelector('input[id^="transformFieldName-"]').value;
+                        const transformation = fieldGroup.querySelector('input[id^="transformTransformation-"]').value;
+                        if (fieldName && transformation) {
+                            fieldsConf.push({ name: fieldName, transformation: transformation });
+                        }
+                    });
+                    action.transformAction = { fieldsConf };
+                } else if (actionType === 'import') {
+                    const importFields = [];
+                    document.querySelectorAll(`#importFields-${id} .form-group`).forEach(fieldGroup => {
+                        const fieldName = fieldGroup.querySelector('input[id^="importFieldName-"]').value;
+                        if (fieldName) {
+                            importFields.push(fieldName);
+                        }
+                    });
+                    action.importAction = {
+                        objectName: document.getElementById(`importObjectName-${id}`).value,
+                        uniqueField: document.getElementById(`importUniqueField-${id}`).value,
+                        action: document.getElementById(`importActionType-${id}`).value,
+                        importFields: importFields,
+                    };
+                } else if (actionType === 'export') {
+                    action.exportAction = {
+                        query: document.getElementById(`exportQuery-${id}`).value,
+                        uniqueField: document.getElementById(`exportUniqueField-${id}`).value || undefined,
+                    };
+                } else if (actionType === 'copySheet') {
+                    const copyFields = [];
+                    document.querySelectorAll(`#copySheetFields-${id} .form-group`).forEach(fieldGroup => {
+                        const fieldName = fieldGroup.querySelector('input[id^="copySheetFieldName-"]').value;
+                        const fieldType = fieldGroup.querySelector('input[id^="copySheetFieldType-"]').value;
+                        if (fieldName) {
+                            copyFields.push({ name: fieldName, type: fieldType || undefined });
+                        }
+                    });
+                    action.copySheetAction = {
+                        copyFields: copyFields,
+                        uniqueField: document.getElementById(`copySheetUniqueField-${id}`).value || undefined,
+                        condition: document.getElementById(`copySheetCondition-${id}`).value || undefined,
+                    };
+                }
+                actions.push(action);
+            });
+
+            const sheets = [];
+            document.querySelectorAll('.sheet-card').forEach(card => {
+                const id = card.id.split('-')[1];
+                const fields = [];
+                document.querySelectorAll(`#sheetFields-${id} .form-group`).forEach(fieldGroup => {
+                    const fieldName = fieldGroup.querySelector('input[id^="sheetFieldName-"]').value;
+                    const fieldType = fieldGroup.querySelector('input[id^="sheetFieldType-"]').value;
+                    if (fieldName) {
+                        fields.push({ name: fieldName, type: fieldType || undefined });
+                    }
+                });
+                sheets.push({
+                    name: document.getElementById(`sheetName-${id}`).value,
+                    fields: fields,
+                });
+            });
+
+            const execConf = {
+                appConfiguration: appConfiguration,
+                actions: actions,
+                sheets: sheets,
+            };
+
+            // Convert to YAML
+            const yamlString = jsonToYaml(execConf);
+            document.getElementById('yamlOutput').textContent = yamlString;
+        }
+
+        // Simple JSON to YAML converter (for display purposes)
+        function jsonToYaml(obj, indent = 0) {
+            let yaml = '';
+            const space = '  '.repeat(indent); // 2 spaces for indent
+
+            for (const key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    const value = obj[key];
+
+                    if (value === undefined || value === null || (Array.isArray(value) && value.length === 0) || (typeof value === 'object' && Object.keys(value).length === 0 && key !== 'transformAction' && key !== 'importAction' && key !== 'exportAction' && key !== 'copySheetAction')) {
+                        continue; // Skip undefined, null, empty arrays, and empty objects, but not empty action objects
+                    }
+
+                    yaml += `${space}${key}:`;
+
+                    if (typeof value === 'object' && !Array.isArray(value)) {
+                        yaml += `\n${jsonToYaml(value, indent + 1)}`;
+                    } else if (Array.isArray(value)) {
+                        yaml += '\n';
+                        value.forEach(item => {
+                            if (typeof item === 'object' && item !== null) {
+                                yaml += `${space}  - \n${jsonToYaml(item, indent + 2)}`;
+                            } else {
+                                yaml += `${space}  - ${item}\n`;
+                            }
+                        });
+                    } else {
+                        yaml += ` ${JSON.stringify(value)}\n`;
+                    }
+                }
+            }
+            return yaml;
+        }
+
+        // Copy to clipboard
+        function copyToClipboard() {
+            const yamlOutput = document.getElementById('yamlOutput');
+            const range = document.createRange();
+            range.selectNode(yamlOutput);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            try {
+                document.execCommand('copy');
+                // Replaced alert with a custom message box for better UX
+                showMessageBox('YAML copied to clipboard!', 'success');
+            } catch (err) {
+                console.error('Failed to copy YAML: ', err);
+                showMessageBox('Failed to copy YAML. Please copy manually.', 'error');
+            }
+            window.getSelection().removeAllRanges();
+        }
+
+        // Function to load YAML from file
+        function loadYamlFile() {
+            const fileInput = document.getElementById('yamlFileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showMessageBox('No file selected.', 'warning');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const yamlString = e.target.result;
+                    const execConf = jsyaml.load(yamlString);
+                    populateForm(execConf);
+                    document.getElementById('yamlOutput').textContent = yamlString; // Display loaded YAML
+                    showMessageBox('YAML loaded successfully from file!', 'success');
+                } catch (error) {
+                    console.error('Error parsing YAML:', error);
+                    showMessageBox(`Error loading YAML from file: ${error.message}`, 'error');
+                }
+            };
+            reader.onerror = (e) => {
+                console.error('Error reading file:', e);
+                showMessageBox('Error reading file.', 'error');
+            };
+            reader.readAsText(file);
+        }
+
+        // Function to load YAML from textarea
+        function loadYamlFromTextarea() {
+            const yamlTextInput = document.getElementById('yamlTextInput');
+            const yamlString = yamlTextInput.value;
+
+            if (!yamlString.trim()) {
+                showMessageBox('No YAML text provided.', 'warning');
+                return;
+            }
+
+            try {
+                const execConf = jsyaml.load(yamlString);
+                populateForm(execConf);
+                document.getElementById('yamlOutput').textContent = yamlString; // Display loaded YAML
+                showMessageBox('YAML loaded successfully from text!', 'success');
+            } catch (error) {
+                console.error('Error parsing YAML from text:', error);
+                showMessageBox(`Error loading YAML from text: ${error.message}`, 'error');
+            }
+        }
+
+        // Function to populate the form from an ExecConf object
+        function populateForm(execConf) {
+            // Clear existing form content
+            document.getElementById('actionsContainer').innerHTML = '';
+            document.getElementById('sheetsContainer').innerHTML = '';
+            actionCounter = 0;
+            sheetCounter = 0;
+
+            // Populate App Configuration
+            if (execConf.appConfiguration) {
+                document.getElementById('processingType').value = execConf.appConfiguration.processingType || 'bulk';
+                document.getElementById('bulkApiMaxWaitSec').value = execConf.appConfiguration.bulkApiMaxWaitSec || 600;
+                document.getElementById('bulkApiPollIntervalSec').value = execConf.appConfiguration.bulkApiPollIntervalSec || 5;
+                document.getElementById('stopOnError').checked = execConf.appConfiguration.stopOnError !== undefined ? execConf.appConfiguration.stopOnError : true;
+                document.getElementById('rollbackOnError').checked = execConf.appConfiguration.rollbackOnError || false;
+                document.getElementById('apiVersion').value = execConf.appConfiguration.apiVersion || '56.0';
+            }
+
+            // Populate Actions
+            if (execConf.actions && Array.isArray(execConf.actions)) {
+                execConf.actions.forEach(actionData => {
+                    addAction(actionData);
+                });
+            }
+
+            // Populate Sheets
+            if (execConf.sheets && Array.isArray(execConf.sheets)) {
+                execConf.sheets.forEach(sheetData => {
+                    addSheet(sheetData);
+                });
+            }
+        }
+
+        // Custom Message Box (instead of alert)
+        function showMessageBox(message, type = 'info') {
+            let messageBox = document.getElementById('customMessageBox');
+            if (!messageBox) {
+                messageBox = createElement('div', ['fixed', 'bottom-4', 'right-4', 'p-4', 'rounded-lg', 'shadow-lg', 'text-white', 'z-50'], { id: 'customMessageBox' });
+                document.body.appendChild(messageBox);
+            }
+
+            messageBox.textContent = message;
+            messageBox.classList.remove('bg-blue-500', 'bg-green-500', 'bg-red-500', 'bg-yellow-500');
+            if (type === 'info') {
+                messageBox.classList.add('bg-blue-500');
+            } else if (type === 'success') {
+                messageBox.classList.add('bg-green-500');
+            } else if (type === 'error') {
+                messageBox.classList.add('bg-red-500');
+            } else if (type === 'warning') {
+                messageBox.classList.add('bg-yellow-500');
+            }
+
+            messageBox.style.display = 'block';
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, 3000); // Hide after 3 seconds
+        }
+
+
+        // Add initial action and sheet when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            // Ensure the first tab is shown.
+            document.getElementById('appConfigTab').style.display = 'block';
+            document.getElementById('sheetsTab').style.display = 'none';
+            document.getElementById('actionsTab').style.display = 'none';
+
+            // Add initial action and sheet if the form is empty (e.g., not loaded from YAML)
+            if (document.getElementById('actionsContainer').children.length === 0) {
+                addAction();
+            }
+            if (document.getElementById('sheetsContainer').children.length === 0) {
+                addSheet();
+            }
+        });
+    </script>
+</body>
+</html>
