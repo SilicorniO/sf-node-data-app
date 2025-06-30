@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 // src/Index.ts
 import { DataSheet } from './model/DataSheet';
 import { Command } from 'commander';

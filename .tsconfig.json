@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "es2020", // Or a lower target like "es2018" if you need wider compatibility
+    "module": "commonjs", // Node.js typically uses CommonJS modules
+    "outDir": "./dist", // Important: All compiled JS will go here
+    "rootDir": "./src", // Where your source .ts files are located
+    "strict": true, // Good practice for type safety
+    "esModuleInterop": true, // Recommended for working with CommonJS and ES Modules
+    "skipLibCheck": true, // Skip type checking of declaration files
+    "forceConsistentCasingInFileNames": true // Ensure consistent casing
+  },
+  "include": [
+    "src/**/*"
+  ], // Important: Include all files in src directory
+  "exclude": [
+    "node_modules",
+    "dist"
+  ] // Exclude these folders from compilation
+}
