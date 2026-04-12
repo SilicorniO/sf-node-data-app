@@ -12,7 +12,7 @@ field transformations, cross-sheet lookups, and automatic rollback on failure.
 1. [How it works](#how-it-works)
 2. [Prerequisites](#prerequisites)
 3. [Installation](#installation)
-4. [Salesforce setup](#salesforce-setup)
+4. [Salesforce authentication](#salesforce-authentication)
 5. [CLI usage](#cli-usage)
 6. [Configuration reference](#configuration-reference)
 7. [Transformation expressions](#transformation-expressions)
@@ -65,8 +65,7 @@ Input files                  Config file (.yaml)
 
 - Node.js ≥ 18
 - A Salesforce org with API access enabled
-- A Connected App configured with the **OAuth 2.0 Client Credentials** flow
-  (server-to-server; no user login required)
+- One of the two supported authentication methods configured (see below)
 
 ---
 
@@ -83,19 +82,34 @@ For development, skip the build and use `ts-node` directly.
 
 ---
 
-## Salesforce setup
+## Salesforce authentication
 
-### Connected App
+The app supports two authentication modes. Set the appropriate environment variables
+in a `.env` file at the project root (never commit this file).
 
-1. In Salesforce Setup, go to **App Manager → New Connected App**.
+**Priority:** if `SF_ACCESS_TOKEN` is present it takes precedence over
+`SF_CLIENT_ID` / `SF_CLIENT_SECRET`.
+
+---
+
+### Option A — Connected App (Client Credentials flow)
+
+A server-to-server OAuth 2.0 flow. The app exchanges a Consumer Key + Secret for
+an access token automatically and transparently refreshes it when it expires
+(tokens are reused for up to 1 hour).
+
+#### Salesforce setup
+
+1. In Salesforce Setup go to **App Manager → New Connected App**.
 2. Enable **OAuth Settings**.
 3. Add the scope **Manage user data via APIs (api)**.
 4. Enable **Enable Client Credentials Flow**.
-5. After saving, note the **Consumer Key** and **Consumer Secret**.
+5. After saving, note the **Consumer Key** (`SF_CLIENT_ID`) and
+   **Consumer Secret** (`SF_CLIENT_SECRET`).
+6. In **Manage Connected Apps**, assign a **Run As** user that has the required
+   object and field permissions.
 
-### Environment variables
-
-Create a `.env` file in the project root (never commit this file):
+#### `.env` variables
 
 ```env
 SF_CLIENT_ID=3MVG9...your_consumer_key...
@@ -103,7 +117,44 @@ SF_CLIENT_SECRET=ABC123...your_consumer_secret...
 SF_INSTANCE_URL=https://your-org.my.salesforce.com
 ```
 
-The app automatically reads this file on startup via `dotenv`.
+---
+
+### Option B — Bearer Token (pre-obtained access token)
+
+Use an access token you already have. This token can come from any Salesforce
+OAuth flow or a SOAP login session:
+
+| Source | How to obtain the token |
+|---|---|
+| **OAuth Authorization Code / JWT Bearer** | The `access_token` field in the token response |
+| **SOAP Login** (`login.salesforce.com/services/Soap/c/…`) | The `<sessionId>` element in the SOAP response |
+| **Salesforce CLI** | `sf org display --target-org <alias> --json \| jq .result.accessToken` |
+| **Workbench / other tools** | Any tool that surfaces the session/access token |
+
+The token is passed directly as the `Authorization: Bearer <token>` header on
+every API call. It is **not** refreshed automatically — if it expires during a
+long run, re-run the tool with a fresh token.
+
+#### `.env` variables
+
+```env
+SF_ACCESS_TOKEN=00D...your_access_token...
+SF_INSTANCE_URL=https://your-org.my.salesforce.com
+```
+
+> `SF_CLIENT_ID` and `SF_CLIENT_SECRET` are not needed in this mode and are
+> ignored if `SF_ACCESS_TOKEN` is present.
+
+---
+
+### Choosing between the two modes
+
+| | Connected App | Bearer Token |
+|---|---|---|
+| Requires Connected App setup | Yes | No |
+| Token is managed automatically | ✓ (refreshed every hour) | ✗ (caller's responsibility) |
+| Works in fully automated pipelines | ✓ | ✓ (if token is injected by CI/CD) |
+| Good for quick / interactive runs | ✗ | ✓ |
 
 ---
 
@@ -411,10 +462,18 @@ See [`examples/README.md`](./examples/README.md) for the full sequence and quick
 
 ### Authentication errors
 
-- Verify `SF_CLIENT_ID`, `SF_CLIENT_SECRET`, and `SF_INSTANCE_URL` are set correctly.
-- Ensure the Connected App has **Client Credentials Flow** enabled and is assigned
-  to a user profile with the required object permissions.
+**Client Credentials flow**
+- Verify `SF_CLIENT_ID`, `SF_CLIENT_SECRET`, and `SF_INSTANCE_URL` are set correctly in `.env`.
+- Ensure the Connected App has **Client Credentials Flow** enabled and a **Run As** user
+  assigned with the required object and field permissions.
 - Check that `SF_INSTANCE_URL` does not have a trailing slash.
+
+**Bearer Token flow**
+- Verify the token is still valid and has not expired (Salesforce access tokens expire
+  after ~2 hours by default; SOAP session IDs after the org's session timeout setting).
+- Make sure `SF_INSTANCE_URL` matches the org the token was issued for.
+- If `SF_ACCESS_TOKEN` is set in `.env`, it takes priority over `SF_CLIENT_ID` / `SF_CLIENT_SECRET`.
+  Remove or comment out `SF_ACCESS_TOKEN` to switch back to Client Credentials mode.
 
 ### `Sheet "X" not found`
 

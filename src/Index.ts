@@ -45,12 +45,28 @@ async function main() {
     }
     let sheetsData = {...excelSheetsData, ...csvSheetsData};
 
-    // Set Salesforce authentication parameters
-    SalesforceAuthenticator.setAuthParams(
-      process.env.SF_CLIENT_ID!,  // Use environment variables
-      process.env.SF_CLIENT_SECRET!,
-      process.env.SF_INSTANCE_URL!
-    );
+    // Set Salesforce authentication parameters.
+    // Priority: Bearer Token (SF_ACCESS_TOKEN) > Client Credentials (SF_CLIENT_ID + SF_CLIENT_SECRET)
+    if (process.env.SF_ACCESS_TOKEN) {
+      if (!process.env.SF_INSTANCE_URL) {
+        throw new Error('SF_INSTANCE_URL is required when using SF_ACCESS_TOKEN.');
+      }
+      console.log('Using Bearer Token authentication (SF_ACCESS_TOKEN).');
+      SalesforceAuthenticator.setBearerTokenParams(
+        process.env.SF_ACCESS_TOKEN,
+        process.env.SF_INSTANCE_URL
+      );
+    } else {
+      if (!process.env.SF_CLIENT_ID || !process.env.SF_CLIENT_SECRET || !process.env.SF_INSTANCE_URL) {
+        throw new Error('SF_CLIENT_ID, SF_CLIENT_SECRET, and SF_INSTANCE_URL are required for Client Credentials authentication.');
+      }
+      console.log('Using Client Credentials authentication (SF_CLIENT_ID + SF_CLIENT_SECRET).');
+      SalesforceAuthenticator.setClientCredentialsParams(
+        process.env.SF_CLIENT_ID,
+        process.env.SF_CLIENT_SECRET,
+        process.env.SF_INSTANCE_URL
+      );
+    }
 
     // --- Translate field names to apiNames using SheetConf ---
     for (const sheetConf of execConf.sheets) {
