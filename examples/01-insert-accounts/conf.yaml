@@ -1,0 +1,24 @@
+appConfiguration:
+  processingType: "bulk"
+  bulkApiMaxWaitSec: 300
+  bulkApiPollIntervalSec: 5
+  stopOnError: true
+  rollbackOnError: true
+  apiVersion: "63.0"
+
+actions:
+  - name: "Insert Accounts"
+    inputSheet: "accounts"
+    importAction:
+      objectName: "Account"
+      action: "insert"
+      uniqueField: "Name"
+      importFields:
+        - "Name"
+        - "BillingStreet"
+        - "BillingCity"
+        - "BillingState"
+        - "BillingCountry"
+        - "Phone"
+        - "Industry"
+        - "Website"

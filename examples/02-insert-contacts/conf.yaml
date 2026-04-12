@@ -1,0 +1,45 @@
+appConfiguration:
+  processingType: "api"
+  bulkApiMaxWaitSec: 300
+  bulkApiPollIntervalSec: 5
+  stopOnError: true
+  rollbackOnError: true
+  apiVersion: "63.0"
+
+# The AccountId column in contacts.csv holds the Account Name (human-readable).
+# This mapping tells the app to treat that column as AccountId (the SF API field name).
+# After the export step retrieves the real Salesforce IDs, the transform step
+# replaces the account name value with the actual Salesforce Account Id.
+sheets:
+  - name: "contacts"
+    fields:
+      - name: "AccountId"
+        apiName: "AccountId"
+
+actions:
+  # Step 1: Export all Accounts from Salesforce to get their Ids
+  - name: "Get Accounts"
+    outputSheet: "Accounts"
+    exportAction:
+      uniqueField: "Name"
+      query: "SELECT Id, Name FROM Account"
+
+  # Step 2: Resolve AccountId (currently holds the Account Name) to a real Salesforce Id,
+  # then insert the Contacts
+  - name: "Insert Contacts"
+    inputSheet: "contacts"
+    transformAction:
+      fieldsConf:
+        - name: "AccountId"
+          transformation: "'${Accounts.Name.Id}'"
+    importAction:
+      objectName: "Contact"
+      action: "insert"
+      uniqueField: "Email"
+      importFields:
+        - "FirstName"
+        - "LastName"
+        - "Email"
+        - "Phone"
+        - "Title"
+        - "AccountId"

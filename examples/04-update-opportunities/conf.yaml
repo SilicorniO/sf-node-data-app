@@ -1,0 +1,25 @@
+appConfiguration:
+  processingType: "api"
+  bulkApiMaxWaitSec: 300
+  bulkApiPollIntervalSec: 5
+  stopOnError: true
+  rollbackOnError: false
+  apiVersion: "63.0"
+
+actions:
+  # The export action merges Salesforce data (including the Id) into the
+  # opportunities-update sheet that was loaded from the CSV.
+  # The CSV values (StageName, Amount) take precedence over Salesforce values,
+  # but Salesforce provides the Id needed for the update.
+  - name: "Update Opportunities"
+    inputSheet: "opportunities-update"
+    exportAction:
+      uniqueField: "Name"
+      query: "SELECT Id, Name, StageName, Amount, CloseDate FROM Opportunity"
+    importAction:
+      objectName: "Opportunity"
+      action: "update"
+      uniqueField: "Name"
+      importFields:
+        - "StageName"
+        - "Amount"

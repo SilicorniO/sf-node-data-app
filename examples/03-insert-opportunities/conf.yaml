@@ -1,0 +1,52 @@
+appConfiguration:
+  processingType: "bulk"
+  bulkApiMaxWaitSec: 300
+  bulkApiPollIntervalSec: 5
+  stopOnError: true
+  rollbackOnError: true
+  apiVersion: "63.0"
+
+# The Opportunities sheet in the Excel file has an "AccountId" column that holds
+# the Account Name. The sheet mapping declares it so the field is treated as AccountId
+# by the rest of the pipeline.
+sheets:
+  - name: "Opportunities"
+    fields:
+      - name: "AccountId"
+        apiName: "AccountId"
+
+actions:
+  # Step 1: Export all Accounts from Salesforce to get their Ids
+  - name: "Get Accounts"
+    outputSheet: "Accounts"
+    exportAction:
+      uniqueField: "Name"
+      query: "SELECT Id, Name FROM Account"
+
+  # Step 2: Check which Opportunities already exist in Salesforce (idempotency)
+  - name: "Get Existing Opportunities"
+    inputSheet: "Opportunities"
+    exportAction:
+      uniqueField: "Name"
+      query: "SELECT Id, Name FROM Opportunity"
+
+  # Step 3: Resolve AccountId (currently holds Account Name) to a real Salesforce Id.
+  # Rows that already have a Salesforce Id (from Step 2) are automatically skipped
+  # by the insert action, making this pipeline safe to re-run.
+  - name: "Insert Opportunities"
+    inputSheet: "Opportunities"
+    transformAction:
+      fieldsConf:
+        - name: "AccountId"
+          transformation: "'${Accounts.Name.Id}'"
+    importAction:
+      objectName: "Opportunity"
+      action: "insert"
+      uniqueField: "Name"
+      importFields:
+        - "Name"
+        - "AccountId"
+        - "StageName"
+        - "CloseDate"
+        - "Amount"
+        - "Description"

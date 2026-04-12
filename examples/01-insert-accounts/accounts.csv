@@ -1,0 +1,6 @@
+Name,BillingStreet,BillingCity,BillingState,BillingCountry,Phone,Industry,Website
+Acme Corporation,123 Main Street,San Francisco,CA,US,+1-415-555-0100,Technology,https://acme.example.com
+Globex Industries,456 Oak Avenue,New York,NY,US,+1-212-555-0200,Manufacturing,https://globex.example.com
+Initech Solutions,789 Pine Road,Austin,TX,US,+1-512-555-0300,Consulting,https://initech.example.com
+Umbrella Logistics,321 Elm Street,Chicago,IL,US,+1-312-555-0400,Transportation,https://umbrella.example.com
+Stark Dynamics,654 Maple Drive,Los Angeles,CA,US,+1-310-555-0500,Technology,https://stark.example.com
