@@ -20,6 +20,7 @@ Opportunities that reference those Accounts, and finally updates to existing rec
 | 04 | [Update Opportunities](./04-update-opportunities/) | sObject Collections | CSV | 03 |
 | 05 | [Export to CSV](./05-export-to-csv/) | Bulk API v2 | None | 01–04 |
 | 06 | [Transform Only](./06-transform-only/) | — | CSV | — (standalone) |
+| 07 | [Multi-Sheet Pipeline](./07-multi-sheet-pipeline/) | sObject Collections | Excel (2 sheets) | 01, 02 |
 
 ## Quick start
 
@@ -39,6 +40,10 @@ node dist/Index.js -c examples/05-export-to-csv/conf.yaml                       
 
 # Example 06 needs no Salesforce credentials
 node dist/Index.js -c examples/06-transform-only/conf.yaml     -v examples/06-transform-only/employees.csv             -o examples/06-transform-only/output/
+
+# Example 07 — generate Excel first, then run
+node examples/07-multi-sheet-pipeline/generate-xlsx.js
+node dist/Index.js -c examples/07-multi-sheet-pipeline/conf.yaml -e examples/07-multi-sheet-pipeline/enrichment.xlsx -o examples/07-multi-sheet-pipeline/output/
 ```
 
 ## Concepts covered
@@ -55,3 +60,8 @@ node dist/Index.js -c examples/06-transform-only/conf.yaml     -v examples/06-tr
 | Bulk API v2 (async, large volumes) | 01, 03, 05 |
 | sObject Collections API (sync, small batches) | 02, 04 |
 | Rollback on error | 01, 02, 03 |
+| Sheet field-name mapping (human-readable → API name) | 07 |
+| Multi-sheet Excel input | 07 |
+| copySheetAction with condition filter | 07 |
+| Multiple sub-actions per action (copy + transform + import) | 07 |
+| Web generator diagram view showcase | 07 |

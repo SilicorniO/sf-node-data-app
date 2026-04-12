@@ -1,0 +1,214 @@
+appConfiguration:
+  # Uses sObject Collections API so updates are synchronous and results visible
+  # immediately — good for the smaller volumes used in this example set.
+  processingType: "collections"
+  stopOnError: true
+  rollbackOnError: false
+  apiVersion: "63.0"
+
+# ---------------------------------------------------------------------------
+# Sheet field-name mappings
+# ---------------------------------------------------------------------------
+# The source Excel file (enrichment.xlsx) uses human-readable column headers.
+# The `sheets` section maps each human-readable header to the Salesforce API
+# field name that the rest of the pipeline (transform, import, export) will use.
+# This is the primary feature demonstrated by the Sheets tab in the generator.
+# ---------------------------------------------------------------------------
+sheets:
+  - name: "Accounts"
+    fields:
+      - name: "Company Name"
+        apiName: "Name"
+      - name: "Annual Revenue"
+        apiName: "AnnualRevenue"
+      - name: "Employees"
+        apiName: "NumberOfEmployees"
+      - name: "Rating"
+        apiName: "Rating"
+      - name: "Description"
+        apiName: "Description"
+
+  - name: "Activities"
+    fields:
+      # WhoId and WhatId will initially hold readable values (email / company name).
+      # The transform steps below resolve them to real Salesforce Ids.
+      - name: "Contact Email"
+        apiName: "WhoId"
+      - name: "Company"
+        apiName: "WhatId"
+      - name: "Task Subject"
+        apiName: "Subject"
+      - name: "Due Date"
+        apiName: "ActivityDate"
+      - name: "Priority Level"
+        apiName: "Priority"
+      - name: "Notes"
+        apiName: "Description"
+
+  # "High-Priority Activities" is an in-memory sheet created dynamically by the
+  # copySheetAction in Step 4. No field mapping needed — it is derived from
+  # "Activities" which is already mapped.
+  - name: "High-Priority Activities"
+    fields: []
+
+  # "Contacts" is populated by the exportAction in Step 3.
+  # No input file mapping needed.
+  - name: "Contacts"
+    fields: []
+
+actions:
+  # ---------------------------------------------------------------------------
+  # Step 1 — Enrich Account data
+  # Export all Accounts from Salesforce and merge them into the "Accounts" sheet
+  # so that subsequent steps can resolve Account Names to Salesforce Ids.
+  # ---------------------------------------------------------------------------
+  - name: "Get Existing Accounts"
+    outputSheet: "Accounts"
+    exportAction:
+      uniqueField: "Name"
+      query: "SELECT Id, Name, AnnualRevenue, NumberOfEmployees, Rating, Description FROM Account"
+
+  # ---------------------------------------------------------------------------
+  # Step 2 — Update Accounts with enriched data from the Excel file.
+  # Only fields explicitly listed in importFields are sent to Salesforce.
+  # Rows that did NOT match a Salesforce record in Step 1 (no Id) are skipped.
+  # ---------------------------------------------------------------------------
+  - name: "Update Account Enrichment"
+    inputSheet: "Accounts"
+    importAction:
+      objectName: "Account"
+      action: "update"
+      uniqueField: "Name"
+      importFields:
+        - "AnnualRevenue"
+        - "NumberOfEmployees"
+        - "Rating"
+        - "Description"
+
+  # ---------------------------------------------------------------------------
+  # Step 3 — Fetch Contacts from Salesforce into an in-memory "Contacts" sheet.
+  # This sheet is used later by the transform steps to resolve Contact emails to
+  # their Salesforce Ids (WhoId on the Task object).
+  # ---------------------------------------------------------------------------
+  - name: "Get Contacts"
+    outputSheet: "Contacts"
+    exportAction:
+      uniqueField: "Email"
+      query: "SELECT Id, Email, AccountId FROM Contact"
+
+  # ---------------------------------------------------------------------------
+  # Step 4 — Split the "Activities" sheet by priority.
+  # The copySheetAction evaluates the condition on every row and copies matching
+  # rows (Priority = "High") into a new in-memory sheet called
+  # "High-Priority Activities". The original sheet is not modified.
+  # ---------------------------------------------------------------------------
+  - name: "Isolate High-Priority Activities"
+    inputSheet: "Activities"
+    outputSheet: "High-Priority Activities"
+    copySheetAction:
+      condition: "'${Priority}' === 'High'"
+      copyFields:
+        - name: "WhoId"
+          apiName: "WhoId"
+        - name: "WhatId"
+          apiName: "WhatId"
+        - name: "Subject"
+          apiName: "Subject"
+        - name: "ActivityDate"
+          apiName: "ActivityDate"
+        - name: "Priority"
+          apiName: "Priority"
+        - name: "Description"
+          apiName: "Description"
+
+  # ---------------------------------------------------------------------------
+  # Step 5 — Resolve lookup fields in "Activities".
+  # • WhoId: Contact Email  → Contact.Id  (via Contacts sheet, keyed on Email)
+  # • WhatId: Account Name  → Account.Id  (via Accounts sheet, keyed on Name)
+  # • Status: set a default value for all new Tasks
+  # ---------------------------------------------------------------------------
+  - name: "Transform Activities"
+    inputSheet: "Activities"
+    transformAction:
+      fieldsConf:
+        - name: "WhoId"
+          transformation: "'${Contacts.Email.Id}'"
+        - name: "WhatId"
+          transformation: "'${Accounts.Name.Id}'"
+        - name: "Status"
+          transformation: "'Not Started'"
+
+  # ---------------------------------------------------------------------------
+  # Step 6 — Same lookup resolution for the high-priority copy.
+  # Even though this sheet was derived from "Activities", it holds the original
+  # readable values and needs its own transform pass.
+  # ---------------------------------------------------------------------------
+  - name: "Transform High-Priority Activities"
+    inputSheet: "High-Priority Activities"
+    transformAction:
+      fieldsConf:
+        - name: "WhoId"
+          transformation: "'${Contacts.Email.Id}'"
+        - name: "WhatId"
+          transformation: "'${Accounts.Name.Id}'"
+        - name: "Status"
+          transformation: "'Not Started'"
+
+  # ---------------------------------------------------------------------------
+  # Step 7 — Idempotency check: fetch any existing Tasks that match the Subjects
+  # we are about to insert. If a Task already has a Salesforce Id (because this
+  # pipeline ran before), the insert action will automatically skip that row.
+  # ---------------------------------------------------------------------------
+  - name: "Get Existing Tasks"
+    inputSheet: "Activities"
+    exportAction:
+      uniqueField: "Subject"
+      query: >-
+        SELECT Id, Subject FROM Task
+        WHERE Subject IN (
+          'Q2 Follow-up Call',
+          'Schedule Product Demo',
+          'Send Proposal',
+          'Logistics Review Meeting',
+          'R&D Partnership Discussion'
+        )
+
+  # ---------------------------------------------------------------------------
+  # Step 8 — Insert standard-priority Tasks (rows without a Salesforce Id are
+  # new; rows that already have an Id from Step 7 are skipped automatically).
+  # ---------------------------------------------------------------------------
+  - name: "Insert Activities"
+    inputSheet: "Activities"
+    importAction:
+      objectName: "Task"
+      action: "insert"
+      uniqueField: "Subject"
+      importFields:
+        - "WhoId"
+        - "WhatId"
+        - "Subject"
+        - "ActivityDate"
+        - "Priority"
+        - "Status"
+        - "Description"
+
+  # ---------------------------------------------------------------------------
+  # Step 9 — Insert high-priority Tasks from the derived sheet.
+  # These rows overlap with "Activities" but this sheet lets you apply different
+  # follow-up logic (e.g. assigning to a specific queue) without touching the
+  # original sheet.
+  # ---------------------------------------------------------------------------
+  - name: "Insert High-Priority Activities"
+    inputSheet: "High-Priority Activities"
+    importAction:
+      objectName: "Task"
+      action: "insert"
+      uniqueField: "Subject"
+      importFields:
+        - "WhoId"
+        - "WhatId"
+        - "Subject"
+        - "ActivityDate"
+        - "Priority"
+        - "Status"
+        - "Description"
