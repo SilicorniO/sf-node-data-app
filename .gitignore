@@ -3,6 +3,7 @@
 # Compiled output
 /dist
 /dist-exec
+/dist-web
 /build
 /out
 /bundle
