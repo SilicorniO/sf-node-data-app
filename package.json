@@ -19,7 +19,7 @@
     "build": "npx tsc",
     "build:executables": "npm run build && pkg .",
     "build:web": "node web/build.mjs",
-    "dev:web": "npx serve web -l 3001"
+    "dev:web": "npx serve . -l 3001 --no-port-switching"
   },
   "keywords": [],
   "author": "",

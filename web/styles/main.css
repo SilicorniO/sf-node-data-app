@@ -160,3 +160,30 @@ select.field-input { cursor: pointer; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+
+/* ── Execute tab accent ──────────────────────── */
+.tab-btn-accent { color: #059669; }
+.tab-btn-accent:hover { color: #047857; }
+.tab-btn-accent.active { color: #059669; border-bottom-color: #059669; }
+
+/* ── Auth radio cards ────────────────────────── */
+.auth-radio-label { user-select: none; }
+.auth-radio-label:has(input:checked) {
+  border-color: #818cf8;
+  background: #eef2ff;
+}
+
+/* ── Execution log panel ─────────────────────── */
+.exec-log-panel {
+  background: #0f172a;
+  color: #86efac;
+  font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  font-size: .72rem;
+  line-height: 1.7;
+  padding: 1rem;
+  min-height: 20rem;
+  max-height: 40rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

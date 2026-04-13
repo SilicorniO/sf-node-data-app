@@ -13,12 +13,25 @@ import { SheetField } from '../model/SheetField';
 import { CopySheetAction } from '../model/CopySheetAction';
 
 export class ExecConfReader {
+  /** Reads a YAML config file from disk and parses it into an ExecConf. */
   static readConfFile(confFilePath: string): ExecConf {
     try {
       const confFileContent = fs.readFileSync(path.resolve(confFilePath), 'utf8');
-      const confData: any = yaml.load(confFileContent);
+      return ExecConfReader.parseConf(confFileContent);
+    } catch (error: any) {
+      throw new Error(`Error reading or parsing configuration file: ${error.message}`);
+    }
+  }
 
-      // Construct ImportConf
+  /**
+   * Parses a YAML string into an ExecConf.
+   * This method has no file-system dependency and can be used in the browser.
+   */
+  static parseConf(yamlString: string): ExecConf {
+    try {
+      const confData: any = yaml.load(yamlString);
+
+      // Construct AppConfiguration
       const importConf = this.parseImportConf(confData.appConfiguration);
 
       // Construct SheetConf array
@@ -27,11 +40,9 @@ export class ExecConfReader {
       // Construct Action array
       const actions = this.parseActions(confData.objectsConf || confData.actions);
 
-      // Construct ExecConf
-      const execConf = new ExecConf(importConf, actions, sheets);
-      return execConf;
+      return new ExecConf(importConf, actions, sheets);
     } catch (error: any) {
-      throw new Error(`Error reading or parsing configuration file: ${error.message}`);
+      throw new Error(`Error parsing configuration: ${error.message}`);
     }
   }
 

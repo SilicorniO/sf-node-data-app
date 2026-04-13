@@ -311,15 +311,26 @@ export class ActionProcessor {
       const action = actions[i];
       if (action.importAction) {
         const importName = action.importAction.objectName;
-        // Create a new ImportAction for delete
+        // Create a delete ImportAction targeting the same SF object.
+        // objectName must be the real SF API object name (e.g. "Account"), not
+        // prefixed — the prefix is for the human-readable action label only.
         const deleteImportAction = new ImportAction(
-          ROLLBACK_ACTION_PREFIX + importName,
+          importName,
           '',
           'delete',
           []
         );
-        // Create a new Action with only the delete ImportAction
-        rollbackActions.push(new Action(action.name, action.outputSheet, action.outputSheet, 0, undefined, deleteImportAction));
+        // Use the original inputSheet so we find the sheet that holds the Ids
+        // that were written back after insert.  outputSheet defaults to inputSheet
+        // in the Action constructor when left empty.
+        rollbackActions.push(new Action(
+          ROLLBACK_ACTION_PREFIX + action.name,
+          action.inputSheet,
+          action.inputSheet,
+          0,
+          undefined,
+          deleteImportAction
+        ));
       }
     }
     return rollbackActions;

@@ -49,16 +49,16 @@ export class SalesforceBulkApiLoader {
     );
 
     if (operation === 'delete') {
-      // Only the Id field is needed for delete
+      // Only the Id field is needed for delete.
+      // If there is no Id column the sheet never had records committed (e.g. the
+      // prior insert failed entirely), so there is nothing to roll back.
       if (indexIdField < 0) {
-        throw new Error(
-          `The object ${importAction.objectName} doesn't have a column '${ID_COLUMN}'`
-        );
+        return { headers: [ID_COLUMN], data: [] };
       }
       const deleteHeaders = [ID_COLUMN];
       const deleteData = dataSheet.data
         .map(row => [row[indexIdField]])
-        .filter(idArr => idArr[0]);
+        .filter(idArr => idArr[0]);   // skip rows whose Id is empty
       return { headers: deleteHeaders, data: deleteData };
     } else {
       // For insert, update, upsert: use importFields if set and has more than one column, else use all columns

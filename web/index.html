@@ -6,6 +6,8 @@
   <title>SF Data · Config Generator</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+  <!-- sfdata pipeline library: inlined during build; served from dist-web/ in dev -->
+  <script src="/dist-web/sfdata.js" data-sfdata-lib></script>
   <link rel="stylesheet" href="styles/main.css">
   <script type="module" src="src/main.js"></script>
 </head>
@@ -19,6 +21,7 @@
     <sf-sheets-panel></sf-sheets-panel>
     <sf-actions-panel></sf-actions-panel>
     <sf-io-panel></sf-io-panel>
+    <sf-execute-panel></sf-execute-panel>
   </main>
 
   <sf-action-modal></sf-action-modal>
