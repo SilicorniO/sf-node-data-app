@@ -32,7 +32,7 @@ export class CsvReader {
    * @param filePath The path to the CSV file.
    * @returns A promise that resolves to a DataSheet object.
    */
-  private static async readCsvFile(filePath: string): Promise<DataSheet> {
+  static async readCsvFile(filePath: string): Promise<DataSheet> {
     return new Promise((resolve, reject) => {
       fs.readFile(filePath, 'utf8', (err, csvString) => {
         if (err) {
@@ -53,5 +53,25 @@ export class CsvReader {
         }
       });
     });
+  }
+
+  /** Synchronous read of a single CSV file, used to reload a released sheet on demand. */
+  static readCsvFileSync(filePath: string): DataSheet {
+    let csvString: string;
+    try {
+      csvString = fs.readFileSync(filePath, 'utf8');
+    } catch (error: any) {
+      throw new Error(`Error reading CSV file "${filePath}": ${error.message}`);
+    }
+    try {
+      const { headers, data } = CsvProcessor.parseCSV(csvString);
+      return {
+        name: path.basename(filePath, path.extname(filePath)),
+        fieldNames: [...headers],
+        data,
+      };
+    } catch (error: any) {
+      throw new Error(`Error parsing CSV file "${filePath}": ${error.message}`);
+    }
   }
 }

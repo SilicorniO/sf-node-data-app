@@ -227,4 +227,63 @@ describe('ActionProcessor action range execution', () => {
       ActionProcessor.processActions(configuration(), sheetsWithInput(), { fromTask: 'Missing' })
     ).rejects.toBeInstanceOf(ConfigurationPreflightError);
   });
+
+  it('loads a sheet lazily, streams each output, and releases inputs when done', async () => {
+    const registry = new SheetRegistry();
+    let inputLoads = 0;
+    registry.registerLoader('input', async () => {
+      inputLoads++;
+      return { name: 'input', fieldNames: ['Name'], data: [['Acme']] };
+    });
+
+    // Nothing is read until an action needs it.
+    expect(registry.has('input')).toBe(false);
+    expect(inputLoads).toBe(0);
+
+    const streamed: string[] = [];
+    await ActionProcessor.processActions(configuration(), registry, {
+      onSheetProduced: (name) => { streamed.push(name); },
+    });
+
+    // The input was loaded exactly once, on demand.
+    expect(inputLoads).toBe(1);
+    // Each produced sheet was streamed out (outputs plus any error sheets).
+    expect(streamed).toContain('one');
+    expect(streamed).toContain('two');
+    expect(streamed).toContain('three');
+    // Every sheet was released once its last consumer ran; nothing lingers in memory.
+    expect(registry.loadedNames()).toEqual([]);
+  });
+
+  it('reloads a released file-backed sheet when a later transform looks it up', async () => {
+    const registry = new SheetRegistry();
+    let loads = 0;
+    const loadRef = () => {
+      loads++;
+      return { name: 'ref', fieldNames: ['Key', 'Value'], data: [['a', '42']] };
+    };
+    registry.registerLoader('ref', async () => loadRef(), () => loadRef());
+    registry.set('input', { name: 'input', fieldNames: ['Key'], data: [['a']] });
+
+    const script = path.join(tempDir, 'lookup.js');
+    fs.writeFileSync(
+      script,
+      'module.exports = function (row, { lookup }) {'
+      + ' const r = lookup("ref", "Key", row.Key);'
+      + ' return { Key: row.Key, Value: r ? r.Value : "" }; };'
+    );
+    const config = new ExecConf(
+      new AppConfiguration('api', null, null, '58.0'),
+      [new TransformAction('Resolve', 'input', 'out', script)],
+      []
+    );
+
+    let out: { [name: string]: string[][] } = {};
+    await ActionProcessor.processActions(config, registry, {
+      onSheetProduced: (name, sheet) => { out[name] = sheet.data; },
+    });
+
+    expect(out.out).toEqual([['a', '42']]);
+    expect(loads).toBeGreaterThan(0);
+  });
 });

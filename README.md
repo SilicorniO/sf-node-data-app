@@ -91,16 +91,32 @@ npx ts-node src/Index.ts \
 Sheet names come from file names (worksheet names for Excel), so two inputs that
 resolve to the same sheet name are rejected with an error.
 
+Input sheets are read lazily to keep memory bounded on large pipelines: a CSV
+file or Excel worksheet is loaded only when an action first needs it, and is
+released once the last action that uses it has run. Each output sheet is written
+to CSV the moment its action produces it, rather than accumulating every sheet
+until the end. Field mappings are applied to a sheet as it loads.
+
+A transform can still read another sheet at runtime with `context.lookup` /
+`lookupAll`; a file-backed sheet that was already released is reloaded from disk
+on demand, and sheets produced in-memory (from `get`, `merge`, or another
+transform) are kept until the last transform in the run has executed.
+
+Because inputs are released after use, a raw input sheet is no longer echoed to
+the output folder unless an action reads and re-emits it.
+
 Execution is reported as six explicit phases:
 
 1. Load and validate the YAML configuration.
 2. Optionally clean the output folder or previous error files.
-3. Read every CSV file and Excel worksheet completely.
-4. Apply configured input field mappings.
-5. Precheck and execute the selected action range sequentially in YAML order.
-6. Write all available sheets and error details as CSV files.
+3. Index the input CSV files and Excel worksheets (sheets load on first use).
+4. Prepare field mappings and authentication.
+5. Precheck and execute the selected action range sequentially in YAML order,
+   writing each produced sheet as CSV as soon as it is ready.
+6. Flush any sheets still resident in memory as CSV.
 
-If an action fails at runtime, phase 6 still runs so successful intermediate
+If an action fails at runtime, sheets already produced were written as they
+completed, and phase 6 still flushes what remains, so successful intermediate
 results and error sheets are not lost. Configuration and transform-script
 precheck failures stop before any output is written.
 

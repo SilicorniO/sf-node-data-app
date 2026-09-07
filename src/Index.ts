@@ -9,6 +9,7 @@ import { SalesforceAuthenticator } from './salesforce/SalesforceAuthenticator';
 import { ExcelReader } from './reader/ExcelReader';
 import { CsvReader } from './reader/CsvReader';
 import { CsvGenerator } from './generator/CsvGenerator';
+import { DataSheet } from './model/DataSheet';
 import {
   ActionProcessor,
   ConfigurationPreflightError,
@@ -144,62 +145,64 @@ async function main(): Promise<void> {
   }
 
   const sheets = new SheetRegistry();
-  console.log('\n[3/6] Reading all input files');
+  console.log('\n[3/6] Indexing input files');
   try {
     if (options.inputFolder) {
       console.log(`      Input folder: ${options.inputFolder}`);
     }
+    // Sheets are read on demand (and released after use) so a large pipeline does
+    // not hold every input in memory at once. Register a loader per sheet here.
+    const fieldMappings = new Map(
+      configuration.sheets.map(sheetConf => [sheetConf.name.toLocaleLowerCase(), sheetConf])
+    );
+    const applyMappings = (sheet: DataSheet): DataSheet => {
+      const sheetConf = fieldMappings.get(sheet.name.toLocaleLowerCase());
+      if (sheetConf && sheetConf.fields.length > 0) {
+        DataSheetProcessor.translateFieldNamesToApiNames(sheet, sheetConf.fields);
+      }
+      return sheet;
+    };
+
     if (inputs.excelFiles.length) {
       console.log(`      Excel files: ${inputs.excelFiles.length}`);
       for (const excelFile of inputs.excelFiles) {
-        console.log(`      Excel: ${excelFile}`);
-        const excelSheets = await ExcelReader.readExcelFile(excelFile);
-        for (const [name, sheet] of Object.entries(excelSheets)) {
-          sheets.addInput(name, sheet);
-          console.log(`        + "${name}": ${sheet.data.length} row(s), ${sheet.fieldNames.length} column(s)`);
+        for (const sheetName of ExcelReader.listSheetNames(excelFile)) {
+          sheets.registerLoader(
+            sheetName,
+            async () => applyMappings(await ExcelReader.readWorksheet(excelFile, sheetName)),
+            () => applyMappings(ExcelReader.readWorksheetSync(excelFile, sheetName))
+          );
+          console.log(`        + "${sheetName}" (${excelFile})`);
         }
       }
     }
     if (inputs.csvFiles.length) {
       console.log(`      CSV files: ${inputs.csvFiles.length}`);
-      const csvSheets = await CsvReader.readCsvFiles(inputs.csvFiles);
-      for (const [name, sheet] of Object.entries(csvSheets)) {
-        sheets.addInput(name, sheet);
-        console.log(`        + "${name}": ${sheet.data.length} row(s), ${sheet.fieldNames.length} column(s)`);
+      for (const csvFile of inputs.csvFiles) {
+        const sheetName = path.basename(csvFile, path.extname(csvFile));
+        sheets.registerLoader(
+          sheetName,
+          async () => applyMappings(await CsvReader.readCsvFile(csvFile)),
+          () => applyMappings(CsvReader.readCsvFileSync(csvFile))
+        );
+        console.log(`        + "${sheetName}" (${csvFile})`);
       }
     }
-    const inputEntries = sheets.entries();
-    const inputRows = inputEntries.reduce((total, [, sheet]) => total + sheet.data.length, 0);
-    console.log(`      Ready: ${inputEntries.length} input sheet(s), ${inputRows} total row(s).`);
+    console.log(`      Ready: ${inputs.csvFiles.length} CSV file(s) and ${inputs.excelFiles.length} Excel file(s) indexed; sheets load on first use.`);
   } catch (error: any) {
-    console.error(`      FAILED while reading inputs: ${error.message}`);
+    console.error(`      FAILED while indexing inputs: ${error.message}`);
     process.exitCode = 1;
     return;
   }
 
-  console.log('\n[4/6] Applying input field mappings');
+  console.log('\n[4/6] Preparing field mappings and authentication');
   try {
-    let mappedFields = 0;
-    let mappedSheets = 0;
-    for (const sheetConfiguration of configuration.sheets) {
-      const sheet = sheets.get(sheetConfiguration.name);
-      if (!sheet) {
-        console.warn(`      SKIP "${sheetConfiguration.name}": no loaded input sheet has this name.`);
-        continue;
-      }
-      if (sheetConfiguration.fields.length === 0) {
-        console.log(`      "${sheet.name}": no translations configured.`);
-        continue;
-      }
-      const result = DataSheetProcessor.translateFieldNamesToApiNames(sheet, sheetConfiguration.fields);
-      mappedFields += result.translated.length;
-      mappedSheets++;
-      console.log(`      "${sheet.name}": translated ${result.translated.length} field(s).`);
-      if (result.missing.length > 0) {
-        console.warn(`        Missing source columns: ${result.missing.join(', ')}`);
-      }
+    const mappedSheets = configuration.sheets.filter(sheetConf => sheetConf.fields.length > 0);
+    if (mappedSheets.length > 0) {
+      console.log(`      Field mappings configured for ${mappedSheets.length} sheet(s); applied as each sheet loads.`);
+    } else {
+      console.log('      No field mappings configured.');
     }
-    console.log(`      Ready: ${mappedFields} field mapping(s) applied across ${mappedSheets} sheet(s).`);
     const selectedActions = actionRange!.end < actionRange!.start
       ? []
       : configuration.actions.slice(actionRange!.start, actionRange!.end + 1);
@@ -220,11 +223,19 @@ async function main(): Promise<void> {
   }
 
   let runtimeFailure: Error | undefined;
+  let writtenSheets = 0;
   console.log(`\n[5/6] Executing ${describeActionRange(configuration.actions, actionRange!)}`);
+  console.log(`      Writing each produced sheet as CSV to: ${options.outputFolder}`);
   try {
     const result = await ActionProcessor.processActions(configuration, sheets, {
       fromTask: options.fromTask,
       toTask: options.toTask,
+      // Stream each sheet to disk the moment it is produced, then it can be released.
+      onSheetProduced: async (sheetName, sheet) => {
+        await CsvGenerator.generateCsvFile(sheet, options.outputFolder, `${sheetName}${CSV_FILE_SUFFIX}`);
+        writtenSheets++;
+        console.log(`        + ${sheetName}${CSV_FILE_SUFFIX}: ${sheet.data.length} row(s)`);
+      },
     });
     if (result.hadContinuedErrors) {
       console.warn('      Pipeline completed with accepted row errors. Review the generated error CSV files.');
@@ -239,21 +250,24 @@ async function main(): Promise<void> {
     }
     runtimeFailure = error;
     console.error(`      FAILED: ${error instanceof PipelineExecutionError ? error.message : `Pipeline failed: ${error.message}`}`);
-    console.warn('      Continuing to output generation so completed sheets and error details are preserved.');
+    console.warn('      Produced sheets were already written as they completed; error details are preserved.');
   }
 
-  const outputEntries = sheets.entries();
-  console.log(`\n[6/6] Writing ${outputEntries.length} sheet(s) as CSV to: ${options.outputFolder}`);
+  // Any sheets still resident in memory (e.g. loaded inputs never streamed by an action)
+  // are flushed here so no output is lost.
+  const remaining = sheets.entries().filter(([name]) => !name.endsWith('-errors'));
+  console.log(`\n[6/6] Flushing ${remaining.length} remaining sheet(s) as CSV to: ${options.outputFolder}`);
   try {
-    for (const [sheetName, sheet] of outputEntries) {
+    for (const [sheetName, sheet] of remaining) {
       await CsvGenerator.generateCsvFile(
         sheet,
         options.outputFolder,
         `${sheetName}${CSV_FILE_SUFFIX}`
       );
+      writtenSheets++;
       console.log(`        + ${sheetName}${CSV_FILE_SUFFIX}: ${sheet.data.length} row(s)`);
     }
-    console.log(`      Wrote ${outputEntries.length} CSV file(s).`);
+    console.log(`      Wrote ${writtenSheets} CSV file(s) in total.`);
   } catch (error: any) {
     console.error(`      FAILED while writing outputs: ${error.message}`);
     runtimeFailure = runtimeFailure ?? error;

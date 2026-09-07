@@ -30,6 +30,62 @@ export interface ActionExecutionRange {
   toTask?: string;
 }
 
+export interface ProcessActionsOptions extends ActionExecutionRange {
+  /**
+   * Invoked as soon as an action produces or updates a sheet, so it can be
+   * streamed to disk and released from memory instead of accumulating.
+   */
+  onSheetProduced?: (name: string, sheet: DataSheet) => Promise<void> | void;
+}
+
+/** Static sheet references an action reads as input (excludes dynamic transform lookups). */
+function actionInputSheets(action: Action): string[] {
+  switch (action.type) {
+    case 'transform':
+      return [(action as TransformAction).inputSheet];
+    case 'merge':
+      return [(action as MergeAction).primarySheet, (action as MergeAction).secondarySheet];
+    case 'insert':
+    case 'update':
+    case 'upsert':
+    case 'delete':
+      return [(action as WriteAction).inputSheet];
+    case 'get':
+    default:
+      return [];
+  }
+}
+
+/** Sheet an action writes as its primary output, if any. */
+function actionOutputSheet(action: Action): string | undefined {
+  switch (action.type) {
+    case 'get':
+      return (action as GetAction).outputSheet;
+    case 'transform':
+      return (action as TransformAction).outputSheet;
+    case 'merge':
+      return (action as MergeAction).outputSheet;
+    case 'insert':
+      return (action as InsertAction).outputSheet;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * For each statically-referenced input sheet, the last selected action index that
+ * reads it. A sheet can be released once execution passes its last-use index.
+ */
+function computeLastInputUse(actions: Action[], start: number, end: number): Map<string, number> {
+  const lastUse = new Map<string, number>();
+  for (let index = start; index <= end; index++) {
+    for (const sheet of actionInputSheets(actions[index])) {
+      lastUse.set(sheet.toLocaleLowerCase(), index);
+    }
+  }
+  return lastUse;
+}
+
 export interface ResolvedActionRange {
   start: number;
   end: number;
@@ -53,10 +109,11 @@ export class ActionProcessor {
   static async processActions(
     execConf: ExecConf,
     sheetsInput: SheetRegistry | { [sheetName: string]: DataSheet },
-    executionRange: ActionExecutionRange = {}
+    executionRange: ProcessActionsOptions = {}
   ): Promise<PipelineResult> {
     const registry = sheetsInput instanceof SheetRegistry ? sheetsInput : new SheetRegistry(sheetsInput);
     const externalSheets = sheetsInput instanceof SheetRegistry ? undefined : sheetsInput;
+    const onSheetProduced = executionRange.onSheetProduced;
     const transformRunner = new TransformScriptRunner();
     try {
       let range: ResolvedActionRange;
@@ -66,6 +123,14 @@ export class ActionProcessor {
         throw new ConfigurationPreflightError(error.message);
       }
       const selectedActions = range.end < range.start ? [] : execConf.actions.slice(range.start, range.end + 1);
+      const lastInputUse = computeLastInputUse(execConf.actions, range.start, range.end);
+      // Transforms can read any sheet dynamically via context.lookup, which is not
+      // statically visible. In-memory-only sheets (no file loader to reload from) are
+      // therefore kept until the last transform in range has run.
+      let lastTransformIndex = -1;
+      for (let index = range.start; index <= range.end; index++) {
+        if (execConf.actions[index].type === 'transform') lastTransformIndex = index;
+      }
 
       try {
         const transforms = selectedActions.filter(
@@ -88,6 +153,14 @@ export class ActionProcessor {
         }
         const startedAt = Date.now();
         console.log(`      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} "${action.name}" — started`);
+
+        // Load only the input sheets this action needs, on demand.
+        for (const inputSheet of actionInputSheets(action)) {
+          if (registry.isKnown(inputSheet)) {
+            await registry.load(inputSheet);
+          }
+        }
+
         let hadRowErrors: boolean;
         try {
           hadRowErrors = await this.executeAction(execConf, action, registry, transformRunner);
@@ -96,8 +169,11 @@ export class ActionProcessor {
             `      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} `
             + `"${action.name}" — failed after ${formatDuration(Date.now() - startedAt)}`
           );
+          // Stream out any error sheet produced by the failure before propagating.
+          await this.flushAndRelease(registry, action, index, lastInputUse, lastTransformIndex, onSheetProduced);
           throw error;
         }
+        await this.flushAndRelease(registry, action, index, lastInputUse, lastTransformIndex, onSheetProduced);
         if (hadRowErrors) {
           console.warn(
             `      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} `
@@ -120,6 +196,55 @@ export class ActionProcessor {
         for (const key of Object.keys(externalSheets)) delete externalSheets[key];
         Object.assign(externalSheets, registry.toObject());
       }
+    }
+  }
+
+  /**
+   * Streams the sheets an action produced (its output and error sheets) to disk via
+   * the callback, then releases from memory every sheet no later action reads. Input
+   * sheets backed by a file loader can be reloaded on demand if needed again.
+   */
+  private static async flushAndRelease(
+    sheets: SheetRegistry,
+    action: Action,
+    index: number,
+    lastInputUse: Map<string, number>,
+    lastTransformIndex: number,
+    onSheetProduced?: (name: string, sheet: DataSheet) => Promise<void> | void
+  ): Promise<void> {
+    // Streaming/release is a memory-bounded mode enabled only when a sink is provided
+    // (the CLI). Without it, callers keep every sheet in the registry (legacy behavior).
+    if (!onSheetProduced) {
+      return;
+    }
+
+    const produced = new Set<string>();
+    const outputSheet = actionOutputSheet(action);
+    if (outputSheet) produced.add(outputSheet);
+    produced.add(action.errorSheet);
+
+    // Stream produced sheets to disk as soon as they exist.
+    for (const name of produced) {
+      const sheet = sheets.get(name);
+      if (sheet) {
+        await onSheetProduced(name, sheet);
+      }
+    }
+
+    // Release in-memory sheets no later action reads as a static input. A sheet with a
+    // file loader can always be reloaded, so it is freed as soon as its static uses are
+    // done. A produced (loader-less) sheet may still be read by a later transform's
+    // dynamic lookup, so it is kept until the last transform in range has run.
+    for (const name of sheets.loadedNames()) {
+      const lastUse = lastInputUse.get(name.toLocaleLowerCase());
+      const staticallyDone = lastUse === undefined || lastUse <= index;
+      if (!staticallyDone) {
+        continue;
+      }
+      if (!sheets.isReloadable(name) && index < lastTransformIndex) {
+        continue;
+      }
+      sheets.release(name);
     }
   }
 
