@@ -42,9 +42,9 @@ HTML file with no CDN or sibling assets. The generator provides:
 - validated YAML import (comments and formatting are normalized)
 - automatic local draft persistence and confirmed reset
 
-The generator does not execute Salesforce operations. Configurations using
-`processingType: sf` execute through the Node CLI with the default org currently
-selected in Salesforce CLI, so no org alias is stored in YAML.
+The generator does not execute Salesforce operations. The Node CLI uses
+environment credentials when configured; otherwise it obtains credentials from
+the default org currently selected in Salesforce CLI.
 
 Run from TypeScript:
 
@@ -74,8 +74,22 @@ If only `--toTask` is set, execution starts at the first action. If only
 actions do not run, so later steps must already have the sheets they need
 (from input files or a previous run's output CSVs).
 
-Inputs can be multiple CSV files, one Excel workbook, or both. An Excel worksheet
-is treated as one logical CSV sheet. All generated files are CSV.
+Inputs can be multiple CSV files, one or more Excel workbooks, or both. An Excel
+worksheet is treated as one logical CSV sheet. All generated files are CSV.
+
+Instead of listing every file, pass `--inputFolder` (`-i`) to read every CSV and
+Excel file in a folder (non-recursively). It can be combined with `--csvFiles`
+and `--excelFile`; all resolved inputs are merged.
+
+```bash
+npx ts-node src/Index.ts \
+  --confFile examples/02-insert-contacts/conf.yaml \
+  --inputFolder examples/02-insert-contacts \
+  --outputFolder output
+```
+
+Sheet names come from file names (worksheet names for Excel), so two inputs that
+resolve to the same sheet name are rejected with an error.
 
 Execution is reported as six explicit phases:
 
@@ -98,10 +112,10 @@ Salesforce CLI active org:
 sf config set target-org=my-org-alias
 ```
 
-Then use `processingType: sf`. The CLI resolves the active org access token and
-instance URL with `sf org display --json` and
-`sf org auth show-access-token --json`; Salesforce requests use the synchronous
-loader. Authentication is verified before the first pipeline action executes.
+When no environment credentials are present, the CLI automatically resolves the
+active org access token and instance URL with `sf org display --json` and
+`sf org auth show-access-token --json`. Authentication is independent of
+`processingType` and is verified before the first pipeline action executes.
 
 Bearer token:
 
@@ -122,7 +136,7 @@ export SF_INSTANCE_URL="https://your-domain.my.salesforce.com"
 
 ```yaml
 appConfiguration:
-  processingType: bulk
+  processingType: api
   bulkApiMaxWaitSec: 300
   bulkApiPollIntervalSec: 5
   apiVersion: "63.0"
@@ -159,16 +173,16 @@ are invalid.
 
 ### Application settings
 
-- `processingType`: `sf` (active Salesforce CLI org with synchronous requests),
-  `bulk` (Bulk API v2), or `api` (sObject Collections/Query API). GET actions
-  always use Bulk API v2 Query jobs; this setting controls write operations.
+- `processingType`: `api` for synchronous Query API and sObject Collections
+  (default), or `bulk` for Bulk API v2. Authentication is selected separately:
+  environment credentials take precedence, with Salesforce CLI as fallback.
 - `bulkApiMaxWaitSec`: optional Bulk job timeout; default is 300 at runtime
 - `bulkApiPollIntervalSec`: optional Bulk polling interval; default is 5
 - `apiVersion`: Salesforce API version; defaults to `58.0`
 - `queryApiBatchSize`: REST Query API page size (200–2000, default `2000`).
-  GET actions first download Bulk Query CSV pages of up to 50,000 rows. If Bulk
-  Query rejects selected compound data, execution falls back to REST and uses
-  this setting. Salesforce can still reduce REST pages (for example to 250 rows).
+  Synchronous GET actions use this setting, but Salesforce can still reduce
+  pages (for example to 250 rows). Bulk GET downloads CSV pages of up to 50,000
+  rows; if compound fields are rejected, it falls back to synchronous GET.
 - `cleanOutputFolderBeforeExecution`: recursively delete existing output-folder
   contents before loading inputs; defaults to `false`
 - `deleteErrorFilesBeforeExecution`: delete existing `*-errors.csv` files and
@@ -225,12 +239,12 @@ produce a warning but exit with status 0.
 
 GET has no sheet input: SOQL is its source. It atomically replaces the output
 sheet. A successful query with no records creates an empty sheet with headers
-derived from the SELECT list. GET always uses Bulk API v2 Query jobs, including
-when `processingType` is `api` or `sf`, because the REST Query API often reduces
-pages far below `queryApiBatchSize` (for example 250 rows). Job status is logged
-while Salesforce runs the query, then CSV results are downloaded in pages of up
-to 50,000 rows. If Salesforce rejects compound fields in Bulk Query, GET logs a
-warning and automatically retries through the synchronous Query API.
+derived from the SELECT list. With `processingType: api`, GET uses the
+synchronous Query API and requests `queryApiBatchSize` rows per page, although
+Salesforce can return fewer. With `processingType: bulk`, GET uses a Bulk API v2
+Query job and downloads CSV results in pages of up to 50,000 rows. If Salesforce
+rejects compound fields in Bulk Query, GET logs a warning and automatically
+retries through the synchronous Query API.
 
 ### INSERT
 

@@ -6,7 +6,7 @@ const listeners = new Set();
 
 export const defaultState = () => ({
   appConfiguration: {
-    processingType: 'bulk',
+    processingType: 'api',
     bulkApiMaxWaitSec: '',
     bulkApiPollIntervalSec: '',
     apiVersion: '58.0',
@@ -67,6 +67,7 @@ function normalizeState(value = {}) {
     appConfiguration: {
       ...defaults.appConfiguration,
       ...(value.appConfiguration || {}),
+      processingType: value.appConfiguration?.processingType === 'bulk' ? 'bulk' : 'api',
     },
     sheets: (value.sheets || []).map(sheet => ({
       id: sheet.id || uid(),

@@ -4,7 +4,7 @@ import { validateConfiguration } from './validation.js';
 export function buildConfiguration(state) {
   const app = state.appConfiguration;
   const appConfiguration = {
-    processingType: app.processingType || 'bulk',
+    processingType: app.processingType || 'api',
     apiVersion: (app.apiVersion || '58.0').trim(),
   };
   const maxWait = optionalPositiveNumber(app.bulkApiMaxWaitSec);
@@ -109,6 +109,12 @@ export function buildActionConfiguration(action) {
     case 'delete':
       result.object = value(action.object);
       result.inputSheet = value(action.inputSheet);
+      break;
+    case 'merge':
+      result.primarySheet = value(action.primarySheet);
+      result.secondarySheet = value(action.secondarySheet);
+      result.outputSheet = value(action.outputSheet);
+      result.idField = value(action.idField);
       break;
   }
   return result;

@@ -8,6 +8,7 @@ import { InsertAction } from '../model/InsertAction';
 import { UpdateAction } from '../model/UpdateAction';
 import { UpsertAction } from '../model/UpsertAction';
 import { DeleteAction } from '../model/DeleteAction';
+import { MergeAction } from '../model/MergeAction';
 import { AppConfiguration } from '../model/AppConfiguration';
 import { ExecConf } from '../model/ExecConf';
 import { SheetConf } from '../model/SheetConf';
@@ -86,6 +87,15 @@ export class ExecConfReader {
         return new UpsertAction(action.name, action.object, action.inputSheet, action.fields, action.externalIdField, options);
       case 'delete':
         return new DeleteAction(action.name, action.object, action.inputSheet, options);
+      case 'merge':
+        return new MergeAction(
+          action.name,
+          action.primarySheet,
+          action.secondarySheet,
+          action.outputSheet,
+          action.idField,
+          options
+        );
       case 'transform':
         return new TransformAction(
           action.name,

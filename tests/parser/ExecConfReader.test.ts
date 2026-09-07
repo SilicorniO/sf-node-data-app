@@ -90,15 +90,14 @@ actions: []
     });
   });
 
-  it('accepts Salesforce CLI processing with the active default org', () => {
+  it('defaults processing to the synchronous API', () => {
     const configuration = ExecConfReader.parseConf(`
 appConfiguration:
-  processingType: sf
   cleanOutputFolderBeforeExecution: true
   deleteErrorFilesBeforeExecution: true
 actions: []
 `);
-    expect(configuration.appConfiguration.processingType).toBe('sf');
+    expect(configuration.appConfiguration.processingType).toBe('api');
     expect(configuration.appConfiguration.cleanOutputFolderBeforeExecution).toBe(true);
     expect(configuration.appConfiguration.deleteErrorFilesBeforeExecution).toBe(true);
   });
@@ -135,6 +134,7 @@ actions:
 
   it.each([
     ['legacy objectsConf', `objectsConf: []`],
+    ['legacy Salesforce CLI processing type', `appConfiguration:\n  processingType: sf`],
     ['legacy compound action', `actions:\n  - name: Old\n    exportAction:\n      query: SELECT Id FROM Account`],
     ['duplicate action name', `actions:\n  - { type: get, name: Same, outputSheet: A, query: "SELECT Id FROM Account" }\n  - { type: get, name: same, outputSheet: B, query: "SELECT Id FROM Contact" }`],
     ['unsafe name', `actions:\n  - { type: get, name: "../escape", outputSheet: A, query: "SELECT Id FROM Account" }`],

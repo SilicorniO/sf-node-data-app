@@ -7,6 +7,7 @@ export const ACTION_TYPES = [
   { value: 'upsert', label: 'UPSERT', description: 'Create or update by external ID' },
   { value: 'delete', label: 'DELETE', description: 'Delete Salesforce records by Id' },
   { value: 'transform', label: 'TRANSFORM', description: 'Run a JavaScript module per row' },
+  { value: 'merge', label: 'MERGE', description: 'Merge two sheets into one by an id field' },
 ];
 
 export function createAction(type = 'get', source = {}) {
@@ -21,6 +22,13 @@ export function createAction(type = 'get', source = {}) {
   };
   if (type === 'get') {
     Object.assign(action, { outputSheet: source.outputSheet || '', query: source.query || '' });
+  } else if (type === 'merge') {
+    Object.assign(action, {
+      primarySheet: source.primarySheet || '',
+      secondarySheet: source.secondarySheet || '',
+      outputSheet: source.outputSheet || '',
+      idField: source.idField || '',
+    });
   } else if (type === 'transform') {
     Object.assign(action, {
       inputSheet: source.inputSheet || '',
@@ -56,6 +64,9 @@ export function changeActionType(action, type) {
     query: action.query,
     script: action.script,
     scriptContent: action.scriptContent,
+    primarySheet: action.primarySheet,
+    secondarySheet: action.secondarySheet,
+    idField: action.idField,
   });
 }
 
@@ -82,6 +93,9 @@ export function actionDescription(action) {
   if (action.type === 'transform') {
     return `${action.inputSheet || 'input'} → ${action.outputSheet || 'output'}`;
   }
+  if (action.type === 'merge') {
+    return `${action.primarySheet || 'primary'} + ${action.secondarySheet || 'secondary'} → ${action.outputSheet || 'output'}`;
+  }
   const target = action.object || 'Salesforce object';
   return `${action.inputSheet || 'input sheet'} → ${target}`;
 }
@@ -106,6 +120,11 @@ export function sheetCatalog(state, beforeIndex = state.actions.length) {
     const inputFields = catalog.find(sheet => sheet.name.toLowerCase() === action.inputSheet?.toLowerCase())?.fields || [];
     if (action.type === 'get') add(action.outputSheet, deriveSoqlFields(action.query));
     if (action.type === 'transform') add(action.outputSheet, inputFields);
+    if (action.type === 'merge') {
+      const primaryFields = catalog.find(sheet => sheet.name.toLowerCase() === action.primarySheet?.toLowerCase())?.fields || [];
+      const secondaryFields = catalog.find(sheet => sheet.name.toLowerCase() === action.secondarySheet?.toLowerCase())?.fields || [];
+      add(action.outputSheet, [...primaryFields, ...secondaryFields]);
+    }
     if (action.type === 'insert' && action.outputSheet) add(action.outputSheet, ['_InputRow', 'Id']);
     const errorName = action.errorSheet || `${action.name}-errors`;
     add(errorName, action.type === 'get' ? ['_ErrorMessage'] : [...inputFields, '_ErrorMessage']);

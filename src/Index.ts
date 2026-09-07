@@ -2,6 +2,8 @@
 
 import { Command } from 'commander';
 import * as dotenv from 'dotenv';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ExecConfReader } from './reader/ExecConfReader';
 import { SalesforceAuthenticator } from './salesforce/SalesforceAuthenticator';
 import { ExcelReader } from './reader/ExcelReader';
@@ -20,8 +22,68 @@ import { OutputCleaner } from './processor/OutputCleaner';
 import { SheetRegistry } from './processor/SheetRegistry';
 
 const CSV_FILE_SUFFIX = '.csv';
+const EXCEL_FILE_SUFFIXES = ['.xlsx', '.xls', '.xlsm', '.xlsb'];
 
 class SalesforceAuthenticationConfigurationError extends Error {}
+
+interface ResolvedInputs {
+  excelFiles: string[];
+  csvFiles: string[];
+}
+
+/**
+ * Scans a folder (non-recursively) and returns the CSV and Excel files it contains.
+ * @param folderPath Path to the folder to scan.
+ */
+function collectInputFilesFromFolder(folderPath: string): ResolvedInputs {
+  const resolvedFolder = path.resolve(folderPath);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(resolvedFolder, { withFileTypes: true });
+  } catch (error: any) {
+    throw new Error(`Cannot read input folder "${folderPath}": ${error.message}`);
+  }
+
+  const excelFiles: string[] = [];
+  const csvFiles: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+    const filePath = path.join(resolvedFolder, entry.name);
+    const suffix = path.extname(entry.name).toLowerCase();
+    if (suffix === CSV_FILE_SUFFIX) {
+      csvFiles.push(filePath);
+    } else if (EXCEL_FILE_SUFFIXES.includes(suffix)) {
+      excelFiles.push(filePath);
+    }
+  }
+
+  excelFiles.sort();
+  csvFiles.sort();
+  return { excelFiles, csvFiles };
+}
+
+/**
+ * Merges explicitly-passed input files with any files discovered in an input folder.
+ */
+function resolveInputFiles(options: {
+  excelFile?: string;
+  csvFiles?: string[];
+  inputFolder?: string;
+}): ResolvedInputs {
+  const excelFiles: string[] = [];
+  const csvFiles: string[] = [...(options.csvFiles ?? [])];
+  if (options.excelFile) {
+    excelFiles.push(options.excelFile);
+  }
+  if (options.inputFolder) {
+    const fromFolder = collectInputFilesFromFolder(options.inputFolder);
+    excelFiles.push(...fromFolder.excelFiles);
+    csvFiles.push(...fromFolder.csvFiles);
+  }
+  return { excelFiles, csvFiles };
+}
 
 async function main(): Promise<void> {
   dotenv.config();
@@ -30,6 +92,7 @@ async function main(): Promise<void> {
     .option('-e, --excelFile <path>', 'Path to an Excel input file')
     .option('-o, --outputFolder <path>', 'Folder where output CSV files are written', './')
     .option('-v, --csvFiles <paths...>', 'Paths to CSV input files')
+    .option('-i, --inputFolder <path>', 'Folder scanned for all CSV and Excel input files')
     .option('--fromTask <nameOrIndex>', 'Start execution at this action name or 1-based index')
     .option('--toTask <nameOrIndex>', 'Stop execution after this action name or 1-based index')
     .parse(process.argv);
@@ -37,10 +100,12 @@ async function main(): Promise<void> {
   const options = program.opts();
   let configuration;
   let actionRange: ResolvedActionRange | undefined;
+  let inputs: ResolvedInputs;
   console.log('SF Data Pipeline');
   console.log(`[1/6] Loading configuration: ${options.confFile}`);
   try {
     configuration = ExecConfReader.readConfFile(options.confFile);
+    inputs = resolveInputFiles(options);
     actionRange = resolveActionRange(configuration.actions, options.fromTask, options.toTask);
     console.log(
       `      Ready: ${configuration.actions.length} action(s), `
@@ -63,7 +128,7 @@ async function main(): Promise<void> {
       configuration.appConfiguration.cleanOutputFolderBeforeExecution,
       configuration.appConfiguration.deleteErrorFilesBeforeExecution,
       configuration.actions.map(action => action.errorSheet),
-      [options.confFile, options.excelFile, ...(options.csvFiles ?? [])].filter(Boolean)
+      [options.confFile, ...inputs.excelFiles, ...inputs.csvFiles].filter(Boolean)
     );
     if (cleanup.mode === 'all') {
       console.log(`      Cleaned output folder: deleted ${cleanup.deletedFiles} file(s).`);
@@ -81,17 +146,23 @@ async function main(): Promise<void> {
   const sheets = new SheetRegistry();
   console.log('\n[3/6] Reading all input files');
   try {
-    if (options.excelFile) {
-      console.log(`      Excel: ${options.excelFile}`);
-      const excelSheets = await ExcelReader.readExcelFile(options.excelFile);
-      for (const [name, sheet] of Object.entries(excelSheets)) {
-        sheets.addInput(name, sheet);
-        console.log(`        + "${name}": ${sheet.data.length} row(s), ${sheet.fieldNames.length} column(s)`);
+    if (options.inputFolder) {
+      console.log(`      Input folder: ${options.inputFolder}`);
+    }
+    if (inputs.excelFiles.length) {
+      console.log(`      Excel files: ${inputs.excelFiles.length}`);
+      for (const excelFile of inputs.excelFiles) {
+        console.log(`      Excel: ${excelFile}`);
+        const excelSheets = await ExcelReader.readExcelFile(excelFile);
+        for (const [name, sheet] of Object.entries(excelSheets)) {
+          sheets.addInput(name, sheet);
+          console.log(`        + "${name}": ${sheet.data.length} row(s), ${sheet.fieldNames.length} column(s)`);
+        }
       }
     }
-    if (options.csvFiles?.length) {
-      console.log(`      CSV files: ${options.csvFiles.length}`);
-      const csvSheets = await CsvReader.readCsvFiles(options.csvFiles);
+    if (inputs.csvFiles.length) {
+      console.log(`      CSV files: ${inputs.csvFiles.length}`);
+      const csvSheets = await CsvReader.readCsvFiles(inputs.csvFiles);
       for (const [name, sheet] of Object.entries(csvSheets)) {
         sheets.addInput(name, sheet);
         console.log(`        + "${name}": ${sheet.data.length} row(s), ${sheet.fieldNames.length} column(s)`);
@@ -133,10 +204,7 @@ async function main(): Promise<void> {
       ? []
       : configuration.actions.slice(actionRange!.start, actionRange!.end + 1);
     const requiresSalesforce = selectedActions.some(action => action.type !== 'transform');
-    const authentication = configureSalesforceAuthentication(
-      configuration.appConfiguration.processingType,
-      requiresSalesforce
-    );
+    const authentication = configureSalesforceAuthentication(requiresSalesforce);
     console.log(`      Authentication: ${authentication}.`);
     if (requiresSalesforce) {
       const connection = await SalesforceAuthenticator.authenticate();
@@ -145,7 +213,7 @@ async function main(): Promise<void> {
   } catch (error: any) {
     console.error(`      FAILED while preparing mappings or authentication: ${error.message}`);
     if (error instanceof SalesforceAuthenticationConfigurationError) {
-      printSalesforceAuthenticationHelp(options.confFile);
+      printSalesforceAuthenticationHelp();
     }
     process.exitCode = 1;
     return;
@@ -199,14 +267,7 @@ async function main(): Promise<void> {
   }
 }
 
-function configureSalesforceAuthentication(
-  processingType: string,
-  required: boolean
-): string {
-  if (processingType === 'sf') {
-    SalesforceAuthenticator.setSfCliParams();
-    return 'Salesforce CLI active org';
-  }
+function configureSalesforceAuthentication(required: boolean): string {
   if (process.env.SF_ACCESS_TOKEN) {
     if (!process.env.SF_INSTANCE_URL) {
       throw new SalesforceAuthenticationConfigurationError(
@@ -233,26 +294,24 @@ function configureSalesforceAuthentication(
     return 'client credentials from environment';
   }
   if (required) {
-    throw new SalesforceAuthenticationConfigurationError(
-      'Salesforce authentication is not configured.'
-    );
+    SalesforceAuthenticator.setSfCliParams();
+    return 'Salesforce CLI active org (environment credentials not found)';
   }
   return 'not required (transform-only pipeline)';
 }
 
-function printSalesforceAuthenticationHelp(confFile: string): void {
+function printSalesforceAuthenticationHelp(): void {
   console.error('      How to fix it (choose one option):');
-  console.error('        1. Keep processingType "bulk" or "api" and set a bearer token:');
+  console.error('        1. Set a bearer token:');
   console.error('           export SF_INSTANCE_URL="https://your-domain.my.salesforce.com"');
   console.error('           export SF_ACCESS_TOKEN="<access-token>"');
-  console.error('        2. Keep processingType "bulk" or "api" and set Connected App credentials:');
+  console.error('        2. Set Connected App credentials:');
   console.error('           export SF_INSTANCE_URL="https://your-domain.my.salesforce.com"');
   console.error('           export SF_CLIENT_ID="<client-id>"');
   console.error('           export SF_CLIENT_SECRET="<client-secret>"');
-  console.error('        3. Use the Salesforce CLI active org:');
+  console.error('        3. Configure the Salesforce CLI fallback:');
   console.error('           sf org login web --alias my-org');
   console.error('           sf config set target-org=my-org');
-  console.error(`           Then set appConfiguration.processingType to "sf" in ${confFile}`);
   console.error('      Variables may also be placed in a .env file in the current directory.');
   console.error('      After configuring one option, rerun the same command.');
 }

@@ -82,6 +82,19 @@ const deleteActionSchema = z.object({
   inputSheet: safeLogicalName,
 }).strict();
 
+const mergeActionSchema = z.object({
+  ...actionCommon,
+  type: z.literal('merge'),
+  primarySheet: safeLogicalName,
+  secondarySheet: safeLogicalName,
+  outputSheet: safeLogicalName,
+  idField: trimmed,
+}).strict().superRefine((action, context) => {
+  if (action.primarySheet.toLocaleLowerCase() === action.secondarySheet.toLocaleLowerCase()) {
+    context.addIssue({ code: 'custom', path: ['secondarySheet'], message: 'secondarySheet must differ from primarySheet' });
+  }
+});
+
 export const actionSchema = z.union([
   getActionSchema,
   insertActionSchema,
@@ -89,10 +102,11 @@ export const actionSchema = z.union([
   upsertActionSchema,
   deleteActionSchema,
   transformActionSchema,
+  mergeActionSchema,
 ]);
 
 const appConfigurationSchema = z.object({
-  processingType: z.enum(['sf', 'bulk', 'api']).default('bulk'),
+  processingType: z.enum(['api', 'bulk']).default('api'),
   bulkApiMaxWaitSec: z.number().positive().nullable().default(null),
   bulkApiPollIntervalSec: z.number().positive().nullable().default(null),
   apiVersion: trimmed.default('58.0'),
@@ -100,7 +114,7 @@ const appConfigurationSchema = z.object({
   deleteErrorFilesBeforeExecution: z.boolean().default(false),
   queryApiBatchSize: z.number().int().min(200).max(2000).default(2000),
 }).strict().default({
-  processingType: 'bulk',
+  processingType: 'api',
   bulkApiMaxWaitSec: null,
   bulkApiPollIntervalSec: null,
   apiVersion: '58.0',
@@ -136,6 +150,8 @@ export const execConfSchema = z.object({
     const normalSheets = [
       'inputSheet' in action ? action.inputSheet : undefined,
       'outputSheet' in action ? action.outputSheet : undefined,
+      'primarySheet' in action ? action.primarySheet : undefined,
+      'secondarySheet' in action ? action.secondarySheet : undefined,
     ].filter((value): value is string => Boolean(value));
     if (normalSheets.some(sheet => sheet.toLocaleLowerCase() === errorSheet)) {
       context.addIssue({ code: 'custom', path: ['actions', index, 'errorSheet'], message: 'errorSheet must differ from this action inputSheet and outputSheet' });

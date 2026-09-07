@@ -88,7 +88,7 @@ export class SalesforceAuthenticator {
   static async authenticate(): Promise<Connection> {
     if (!SalesforceAuthenticator.authMode || !SalesforceAuthenticator.instanceUrl) {
       throw new Error(
-        'No Salesforce auth params set. Configure environment authentication or Salesforce CLI mode first.'
+        'No Salesforce authentication configured. Set environment credentials or configure an active Salesforce CLI org.'
       );
     }
 

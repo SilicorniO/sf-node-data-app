@@ -139,6 +139,14 @@ class SfActionModal extends HTMLElement {
         </div>
       </div>`;
     }
+    if (action.type === 'merge') {
+      return `<div class="form-grid two">
+        ${this.field('primarySheet', 'Primary sheet', action.primarySheet, { required: true, list: true, placeholder: 'Wins on conflicts' })}
+        ${this.field('secondarySheet', 'Secondary sheet', action.secondarySheet, { required: true, list: true, placeholder: 'Fills blanks' })}
+        ${this.field('idField', 'Id field', action.idField, { required: true, placeholder: 'Column to match on, e.g. Email' })}
+        ${this.field('outputSheet', 'Output sheet', action.outputSheet, { required: true, list: true, placeholder: 'Merged sheet' })}
+      </div>`;
+    }
     const fields = action.type === 'delete' ? '' : this.fieldsEditor(action);
     const output = action.type === 'insert'
       ? this.field('outputSheet', 'ID output sheet', action.outputSheet, { list: true, placeholder: 'Optional: Inserted IDs' })

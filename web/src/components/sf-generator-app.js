@@ -94,14 +94,13 @@ class SfGeneratorApp extends HTMLElement {
         <div><p class="eyebrow">Step 1</p><h2>Application settings</h2></div>
         <span class="status-pill">Required</span>
       </div>
-      <p class="section-intro">Choose how Salesforce operations run. Salesforce CLI mode uses the active default org from <code>sf</code>; no org alias or token is stored in YAML.</p>
+      <p class="section-intro">Choose how Salesforce operations run. Authentication uses environment credentials when present, otherwise the active default org from <code>sf</code>.</p>
       <div class="card form-grid two">
         <label class="field">
           <span>Processing type <b>*</b></span>
           <select data-app="processingType">
-            <option value="sf" ${app.processingType === 'sf' ? 'selected' : ''}>Salesforce CLI — active default org</option>
+            <option value="api" ${app.processingType === 'api' ? 'selected' : ''}>Synchronous API</option>
             <option value="bulk" ${app.processingType === 'bulk' ? 'selected' : ''}>Bulk API v2 — large data sets</option>
-            <option value="api" ${app.processingType === 'api' ? 'selected' : ''}>sObject Collections — synchronous</option>
           </select>
         </label>
         <label class="field">

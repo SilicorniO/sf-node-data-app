@@ -1,7 +1,7 @@
 // src/model/ImportConf.ts
-export type ProcessingType = "sf" | "bulk" | "api";
+export type ProcessingType = "api" | "bulk";
 export class AppConfiguration {
-  processingType: ProcessingType = "bulk";
+  processingType: ProcessingType = "api";
   bulkApiMaxWaitSec: number | null;
   bulkApiPollIntervalSec: number | null;
   apiVersion: string;

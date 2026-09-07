@@ -4,6 +4,7 @@ import { DeleteAction } from '../model/DeleteAction';
 import { ExecConf } from '../model/ExecConf';
 import { GetAction } from '../model/GetAction';
 import { InsertAction } from '../model/InsertAction';
+import { MergeAction } from '../model/MergeAction';
 import { TransformAction } from '../model/TransformAction';
 import { UpdateAction } from '../model/UpdateAction';
 import { UpsertAction } from '../model/UpsertAction';
@@ -135,6 +136,9 @@ export class ActionProcessor {
           return false;
         case 'transform':
           return this.executeTransform(action as TransformAction, sheets, transformRunner);
+        case 'merge':
+          this.executeMerge(action as MergeAction, sheets);
+          return false;
         case 'insert':
         case 'update':
         case 'upsert':
@@ -151,25 +155,34 @@ export class ActionProcessor {
   private static async executeGet(execConf: ExecConf, action: GetAction, sheets: SheetRegistry): Promise<void> {
     const connection = await this.connection();
     let result: DataSheet;
-    try {
-      result = await new SalesforceBulkApiLoader(execConf.appConfiguration).query(
-        connection.instanceUrl,
-        connection.accessToken,
-        action.query,
-        action.outputSheet
-      );
-    } catch (error: any) {
-      if (!isBulkQueryUnsupported(error)) throw error;
-      console.warn(
-        '        Query: Bulk API v2 does not support a selected field; '
-        + `falling back to the synchronous Query API (batchSize ${execConf.appConfiguration.queryApiBatchSize}).`
-      );
+    if (execConf.appConfiguration.processingType === 'api') {
       result = await new SalesforceApiLoader(execConf.appConfiguration).query(
         connection.instanceUrl,
         connection.accessToken,
         action.query,
         action.outputSheet
       );
+    } else {
+      try {
+        result = await new SalesforceBulkApiLoader(execConf.appConfiguration).query(
+          connection.instanceUrl,
+          connection.accessToken,
+          action.query,
+          action.outputSheet
+        );
+      } catch (error: any) {
+        if (!isBulkQueryUnsupported(error)) throw error;
+        console.warn(
+          '        Query: Bulk API v2 does not support a selected field; '
+          + `falling back to the synchronous Query API (batchSize ${execConf.appConfiguration.queryApiBatchSize}).`
+        );
+        result = await new SalesforceApiLoader(execConf.appConfiguration).query(
+          connection.instanceUrl,
+          connection.accessToken,
+          action.query,
+          action.outputSheet
+        );
+      }
     }
     sheets.set(action.outputSheet, result);
     console.log(`        Output "${action.outputSheet}": ${result.data.length} row(s).`);
@@ -193,6 +206,85 @@ export class ActionProcessor {
       return true;
     }
     return false;
+  }
+
+  private static executeMerge(action: MergeAction, sheets: SheetRegistry): void {
+    const primary = sheets.require(action.primarySheet);
+    const secondary = sheets.require(action.secondarySheet);
+
+    const primaryIdIndex = primary.fieldNames.indexOf(action.idField);
+    if (primaryIdIndex < 0) {
+      throw new Error(`Sheet "${primary.name}" is missing required field: ${action.idField}.`);
+    }
+    const secondaryIdIndex = secondary.fieldNames.indexOf(action.idField);
+    if (secondaryIdIndex < 0) {
+      throw new Error(`Sheet "${secondary.name}" is missing required field: ${action.idField}.`);
+    }
+
+    // Output columns: all primary columns (in order), then secondary columns not already present.
+    const fieldNames = [...primary.fieldNames];
+    const fieldIndex = new Map(fieldNames.map((field, index) => [field.toLocaleLowerCase(), index]));
+    const secondaryToOutput = secondary.fieldNames.map(field => {
+      const key = field.toLocaleLowerCase();
+      let index = fieldIndex.get(key);
+      if (index === undefined) {
+        index = fieldNames.length;
+        fieldNames.push(field);
+        fieldIndex.set(key, index);
+      }
+      return index;
+    });
+
+    const blankRow = (): string[] => fieldNames.map(() => '');
+    const data: string[][] = [];
+
+    // Primary rows: matched (non-empty id) rows are indexed for merging; empty-id rows pass through.
+    const rowById = new Map<string, string[]>();
+    primary.data.forEach(values => {
+      const id = values[primaryIdIndex] ?? '';
+      const row = blankRow();
+      primary.fieldNames.forEach((_field, column) => { row[column] = values[column] ?? ''; });
+      if (id === '') {
+        data.push(row);
+        return;
+      }
+      if (rowById.has(id)) {
+        throw new Error(`Sheet "${primary.name}" has a duplicate ${action.idField} value: "${id}".`);
+      }
+      rowById.set(id, row);
+      data.push(row);
+    });
+
+    // Secondary rows: merge into the matching primary row (primary wins non-empty cells);
+    // unmatched non-empty ids append a new row; empty-id rows pass through.
+    const seenSecondaryIds = new Set<string>();
+    secondary.data.forEach(values => {
+      const id = values[secondaryIdIndex] ?? '';
+      if (id === '') {
+        const row = blankRow();
+        secondary.fieldNames.forEach((_field, column) => { row[secondaryToOutput[column]] = values[column] ?? ''; });
+        data.push(row);
+        return;
+      }
+      if (seenSecondaryIds.has(id)) {
+        throw new Error(`Sheet "${secondary.name}" has a duplicate ${action.idField} value: "${id}".`);
+      }
+      seenSecondaryIds.add(id);
+      const existing = rowById.get(id);
+      if (existing) {
+        secondary.fieldNames.forEach((_field, column) => {
+          const output = secondaryToOutput[column];
+          if (existing[output] === '') existing[output] = values[column] ?? '';
+        });
+        return;
+      }
+      const row = blankRow();
+      secondary.fieldNames.forEach((_field, column) => { row[secondaryToOutput[column]] = values[column] ?? ''; });
+      data.push(row);
+    });
+
+    sheets.set(action.outputSheet, { name: action.outputSheet, fieldNames, data });
+    console.log(`        Output "${action.outputSheet}": ${data.length} row(s).`);
   }
 
   private static async executeWrite(
@@ -336,7 +428,6 @@ export class ActionProcessor {
 
   private static loader(execConf: ExecConf): SalesforceDataLoader {
     return execConf.appConfiguration.processingType === 'api'
-      || execConf.appConfiguration.processingType === 'sf'
       ? new SalesforceApiLoader(execConf.appConfiguration)
       : new SalesforceBulkApiLoader(execConf.appConfiguration);
   }
