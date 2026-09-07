@@ -15,11 +15,11 @@
     "start-csv-big": "ts-node src/Index.ts --csvFiles input/data_big.csv -c input/conf_csv_big.yaml -o output",
     "debug": "node --inspect-brk -r ts-node/register src/Index.ts -e input/carga_eci_conf.xlsx -c input/conf_eci_conf.yaml -o output",
     "debug-csv": "node --inspect-brk -r ts-node/register src/Index.ts --csvFiles input/data.csv -c input/conf_csv.yaml -o output",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "build": "npx tsc",
     "build:executables": "npm run build && pkg .",
     "build:web": "node web/build.mjs",
-    "dev:web": "npx serve . -l 3001 --no-port-switching"
+    "dev:web": "npm run build:web && npx serve dist-web -l 3001 --no-port-switching"
   },
   "keywords": [],
   "author": "",
@@ -33,17 +33,21 @@
     "@types/xlsx": "^0.0.35",
     "esbuild": "^0.28.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^5.0.0"
   },
   "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.5",
     "axios": "^1.9.0",
+    "codemirror": "^6.0.2",
     "commander": "^13.1.0",
     "dotenv": "^16.5.0",
     "js-yaml": "^4.1.0",
     "jsforce": "^3.8.1",
     "papaparse": "^5.5.2",
     "pkg": "^5.8.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.5.4"
   },
   "pkg": {
     "scripts": [

@@ -2,10 +2,13 @@
 import * as jsforce from 'jsforce';
 import { Connection } from 'jsforce';
 import axios from 'axios';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 
 const MS_IN_HOUR = 3600000;
+const execFileAsync = promisify(execFile);
 
-type AuthMode = 'client_credentials' | 'bearer_token';
+type AuthMode = 'client_credentials' | 'bearer_token' | 'sf_cli';
 
 export class SalesforceAuthenticator {
   // --- Shared ---
@@ -61,6 +64,14 @@ export class SalesforceAuthenticator {
     SalesforceAuthenticator.tokenCreatedAt   = null;
   }
 
+  /** Use the default org currently selected in Salesforce CLI. */
+  static setSfCliParams(): void {
+    SalesforceAuthenticator.authMode = 'sf_cli';
+    SalesforceAuthenticator.instanceUrl = 'sf-cli';
+    SalesforceAuthenticator.actualConnection = undefined as any;
+    SalesforceAuthenticator.tokenCreatedAt = null;
+  }
+
   /**
    * @deprecated Use setClientCredentialsParams() instead.
    * Kept for backwards compatibility.
@@ -77,8 +88,12 @@ export class SalesforceAuthenticator {
   static async authenticate(): Promise<Connection> {
     if (!SalesforceAuthenticator.authMode || !SalesforceAuthenticator.instanceUrl) {
       throw new Error(
-        'No Salesforce auth params set. Call setClientCredentialsParams() or setBearerTokenParams() first.'
+        'No Salesforce auth params set. Configure environment authentication or Salesforce CLI mode first.'
       );
+    }
+
+    if (SalesforceAuthenticator.authMode === 'sf_cli') {
+      return SalesforceAuthenticator._authenticateWithSfCli();
     }
 
     if (SalesforceAuthenticator.authMode === 'bearer_token') {
@@ -144,5 +159,47 @@ export class SalesforceAuthenticator {
     }
 
     return SalesforceAuthenticator.actualConnection;
+  }
+
+  private static async _authenticateWithSfCli(): Promise<Connection> {
+    if (SalesforceAuthenticator.actualConnection) {
+      return SalesforceAuthenticator.actualConnection;
+    }
+    try {
+      const { stdout } = await execFileAsync('sf', ['org', 'display', '--json'], {
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      const response = JSON.parse(stdout);
+      const result = response?.result;
+      if (response?.status !== 0 || !result?.instanceUrl) {
+        throw new Error(response?.message || 'The active sf org did not return an instance URL.');
+      }
+      const targetOrg = result.username || result.alias;
+      if (!targetOrg) {
+        throw new Error('The active sf org did not return a username or alias.');
+      }
+      const tokenResponse = await execFileAsync(
+        'sf',
+        ['org', 'auth', 'show-access-token', '--target-org', targetOrg, '--json'],
+        { maxBuffer: 10 * 1024 * 1024 }
+      );
+      const tokenResult = JSON.parse(tokenResponse.stdout);
+      const accessToken = tokenResult?.result?.accessToken;
+      if (tokenResult?.status !== 0 || !accessToken) {
+        throw new Error(tokenResult?.message || 'Salesforce CLI did not return an access token.');
+      }
+      SalesforceAuthenticator.instanceUrl = result.instanceUrl;
+      SalesforceAuthenticator.accessToken = accessToken;
+      SalesforceAuthenticator.actualConnection = new jsforce.Connection({
+        instanceUrl: result.instanceUrl,
+        accessToken,
+      });
+      return SalesforceAuthenticator.actualConnection;
+    } catch (error: any) {
+      const details = error?.stderr?.trim() || error.message;
+      throw new Error(
+        `Salesforce CLI authentication failed. Set a default org with "sf config set target-org=<alias>". ${details}`
+      );
+    }
   }
 }

@@ -1,30 +1,10 @@
 appConfiguration:
   processingType: "bulk"
   apiVersion: "63.0"
-  stopOnError: true
-  rollbackOnError: false
 
 actions:
   - name: "Transform Employees"
+    type: "transform"
     inputSheet: "employees"
-    transformAction:
-      fieldsConf:
-        # Concatenate first + optional middle + last name
-        - name: "FullName"
-          transformation: "'${FirstName}' + ('${MiddleName}' ? ' ${MiddleName}' : '') + ' ${LastName}'"
-
-        # Classify salary into bands using a ternary chain
-        - name: "SalaryBand"
-          transformation: "Number('${Salary}') < 70000 ? 'Junior' : Number('${Salary}') <= 90000 ? 'Mid' : 'Senior'"
-
-        # Convert IsManager boolean string to a role label
-        - name: "Role"
-          transformation: "'${IsManager}' === 'true' ? 'Manager' : 'Individual Contributor'"
-
-        # Compute tenure in years from HireDate to today
-        - name: "YearsOfService"
-          transformation: "String(Math.floor((Date.now() - new Date('${HireDate}').getTime()) / (1000 * 60 * 60 * 24 * 365)))"
-
-        # Annual bonus as 10% for managers, 5% for others
-        - name: "AnnualBonus"
-          transformation: "String(Math.round(Number('${Salary}') * ('${IsManager}' === 'true' ? 0.10 : 0.05)))"
+    outputSheet: "employees-transformed"
+    script: "./transform-employees.js"

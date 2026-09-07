@@ -2,23 +2,20 @@ appConfiguration:
   processingType: "bulk"
   bulkApiMaxWaitSec: 300
   bulkApiPollIntervalSec: 5
-  stopOnError: true
-  rollbackOnError: true
   apiVersion: "63.0"
 
 actions:
   - name: "Insert Accounts"
+    type: "insert"
+    object: "Account"
     inputSheet: "accounts"
-    importAction:
-      objectName: "Account"
-      action: "insert"
-      uniqueField: "Name"
-      importFields:
-        - "Name"
-        - "BillingStreet"
-        - "BillingCity"
-        - "BillingState"
-        - "BillingCountry"
-        - "Phone"
-        - "Industry"
-        - "Website"
+    outputSheet: "Inserted Account IDs"
+    fields:
+      - "Name"
+      - "BillingStreet"
+      - "BillingCity"
+      - "BillingState"
+      - "BillingCountry"
+      - "Phone"
+      - "Industry"
+      - "Website"

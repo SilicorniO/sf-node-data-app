@@ -1,35 +1,26 @@
-import { TransformAction } from './TransformAction';
-import { ImportAction } from './ImportAction';
-import { ExportAction } from './ExportAction';
-import { CopySheetAction } from './CopySheetAction';
+export type ActionType = 'get' | 'insert' | 'update' | 'upsert' | 'delete' | 'transform';
+export type ErrorRows = 'errors' | 'all';
 
-export class Action {
-  name: string;
-  inputSheet: string;
-  outputSheet: string;
-  waitStartingTime: number = 0;
-  transformAction?: TransformAction;
-  importAction?: ImportAction;
-  exportAction?: ExportAction;
-  copySheetAction?: CopySheetAction;
+export interface ActionOptions {
+  waitBeforeSeconds?: number;
+  continueOnError?: boolean;
+  errorSheet?: string;
+  errorRows?: ErrorRows;
+}
 
-  constructor(
-    name: string,
-    inputSheet: string,
-    outputSheet: string,
-    waitStartingTime: number = 0,
-    transformAction?: TransformAction,
-    importAction?: ImportAction,
-    exportAction?: ExportAction,
-    copySheetAction?: CopySheetAction
-  ) {
+export abstract class Action {
+  abstract readonly type: ActionType;
+  readonly name: string;
+  readonly waitBeforeSeconds: number;
+  readonly continueOnError: boolean;
+  readonly errorSheet: string;
+  readonly errorRows: ErrorRows;
+
+  protected constructor(name: string, options: ActionOptions = {}) {
     this.name = name;
-    this.inputSheet = inputSheet;
-    this.outputSheet = outputSheet || inputSheet;
-    this.waitStartingTime = waitStartingTime;
-    this.transformAction = transformAction;
-    this.importAction = importAction;
-    this.exportAction = exportAction;
-    this.copySheetAction = copySheetAction;
+    this.waitBeforeSeconds = options.waitBeforeSeconds ?? 0;
+    this.continueOnError = options.continueOnError ?? false;
+    this.errorSheet = options.errorSheet ?? `${name}-errors`;
+    this.errorRows = options.errorRows ?? 'errors';
   }
 }

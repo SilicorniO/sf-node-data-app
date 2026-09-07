@@ -7,8 +7,14 @@ export class ExcelReader {
     try {
       const workbook = XLSX.readFile(path.resolve(filePath));
       const sheetsData: { [sheetName: string]: DataSheet } = {};
+      const normalizedNames = new Map<string, string>();
 
       for (const sheetName of workbook.SheetNames) {
+        const normalizedName = sheetName.toLocaleLowerCase();
+        if (normalizedNames.has(normalizedName)) {
+          throw new Error(`Duplicate Excel sheet names differ only by case: "${normalizedNames.get(normalizedName)}" and "${sheetName}".`);
+        }
+        normalizedNames.set(normalizedName, sheetName);
         const worksheet = workbook.Sheets[sheetName];
         const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
         const numCols = range.e.c + 1;
@@ -16,7 +22,7 @@ export class ExcelReader {
         const startDataRow = 1;
 
         if (numRows < 2) {
-          console.warn(`Sheet "${sheetName}" is empty or has less than 'two' rows and will be skipped.`);
+          console.warn(`        - SKIP "${sheetName}": empty or has no data rows.`);
           continue;
         }
 

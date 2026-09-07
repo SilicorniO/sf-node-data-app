@@ -1,21 +1,92 @@
 'use strict';
 
-export let _uid = 1;
-export const uid = () => String(_uid++);
-export const resetUid = (n = 1) => { _uid = n; };
+const STORAGE_KEY = 'sfdata.yaml-generator.v2';
+let nextId = 1;
+const listeners = new Set();
 
-export const state = {
+export const defaultState = () => ({
+  appConfiguration: {
+    processingType: 'bulk',
+    bulkApiMaxWaitSec: '',
+    bulkApiPollIntervalSec: '',
+    apiVersion: '58.0',
+    queryApiBatchSize: 2000,
+    cleanOutputFolderBeforeExecution: false,
+    deleteErrorFilesBeforeExecution: false,
+  },
   sheets: [],
   actions: [],
-};
+  activeTab: 'app',
+});
 
-const _bus = new EventTarget();
+export let state = defaultState();
 
-export const bus = {
-  on(event, cb) {
-    _bus.addEventListener(event, e => cb(e.detail));
-  },
-  emit(event, data) {
-    _bus.dispatchEvent(new CustomEvent(event, { detail: data }));
-  },
-};
+export const uid = () => `item-${nextId++}`;
+
+export function subscribe(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function notify(reason = 'change') {
+  persistDraft();
+  listeners.forEach(listener => listener(reason));
+}
+
+export function replaceState(nextState, reason = 'replace') {
+  state = normalizeState(nextState);
+  notify(reason);
+}
+
+export function resetState() {
+  nextId = 1;
+  state = defaultState();
+  localStorage.removeItem(STORAGE_KEY);
+  listeners.forEach(listener => listener('reset'));
+}
+
+export function restoreDraft() {
+  try {
+    const value = localStorage.getItem(STORAGE_KEY);
+    if (!value) return false;
+    state = normalizeState(JSON.parse(value));
+    return true;
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+    return false;
+  }
+}
+
+function persistDraft() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function normalizeState(value = {}) {
+  const defaults = defaultState();
+  return {
+    appConfiguration: {
+      ...defaults.appConfiguration,
+      ...(value.appConfiguration || {}),
+    },
+    sheets: (value.sheets || []).map(sheet => ({
+      id: sheet.id || uid(),
+      name: sheet.name || '',
+      source: sheet.source || null,
+      collapsed: Boolean(sheet.collapsed),
+      fields: (sheet.fields || []).map(field => ({
+        id: field.id || uid(),
+        name: field.name || '',
+        apiName: field.apiName || '',
+        translate: field.translate ?? Boolean(field.apiName && field.apiName !== field.name),
+      })),
+    })),
+    actions: (value.actions || []).map(action => ({
+      ...action,
+      id: action.id || uid(),
+      fields: action.fields ? [...action.fields] : undefined,
+    })),
+    activeTab: ['app', 'sheets', 'actions', 'preview'].includes(value.activeTab)
+      ? value.activeTab
+      : 'app',
+  };
+}

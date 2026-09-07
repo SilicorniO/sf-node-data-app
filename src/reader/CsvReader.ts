@@ -11,9 +11,15 @@ export class CsvReader {
    */
   static async readCsvFiles(csvFilePaths: string[]): Promise<{ [sheetName: string]: DataSheet }> {
     const sheetsData: { [sheetName: string]: DataSheet } = {};
+    const normalizedNames = new Map<string, string>();
 
     for (const filePath of csvFilePaths) {
       const sheetName = path.basename(filePath, path.extname(filePath)); // Use the file name (without extension) as the sheet name
+      const normalizedName = sheetName.toLocaleLowerCase();
+      if (normalizedNames.has(normalizedName)) {
+        throw new Error(`Duplicate CSV sheet names differ only by case: "${normalizedNames.get(normalizedName)}" and "${sheetName}".`);
+      }
+      normalizedNames.set(normalizedName, sheetName);
       const dataSheet = await this.readCsvFile(filePath);
       sheetsData[sheetName] = dataSheet;
     }

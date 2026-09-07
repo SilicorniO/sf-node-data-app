@@ -1,505 +1,357 @@
-# SFNode Data App
+# sf-data
 
-A Node.js/TypeScript CLI tool for loading tabular data (Excel or CSV) into Salesforce
-via ETL pipelines defined in YAML. Supports insert, update, upsert, and delete
-operations via the **Bulk API v2** and the **sObject Collections REST API**, with
-field transformations, cross-sheet lookups, and automatic rollback on failure.
+`sf-data` runs ordered data pipelines between CSV/Excel sheets and Salesforce. Each
+entry in `actions` performs exactly one operation:
 
----
+- `get`: run SOQL and create/replace a CSV sheet
+- `insert`: insert CSV rows
+- `update`: update rows by `Id`
+- `upsert`: upsert rows by an external-ID field
+- `delete`: delete rows by `Id`
+- `transform`: run a JavaScript function for each CSV row
 
-## Table of contents
+Actions run sequentially in YAML order. Every output is immediately available as
+an input to later actions.
 
-1. [How it works](#how-it-works)
-2. [Prerequisites](#prerequisites)
-3. [Installation](#installation)
-4. [Salesforce authentication](#salesforce-authentication)
-5. [CLI usage](#cli-usage)
-6. [Configuration reference](#configuration-reference)
-7. [Transformation expressions](#transformation-expressions)
-8. [Output files](#output-files)
-9. [Examples](#examples)
-10. [Troubleshooting](#troubleshooting)
-
----
-
-## How it works
-
-```
-Input files                  Config file (.yaml)
-  CSV / Excel     ──────►   ExecConfReader
-       │                         │
-       ▼                         ▼
-  DataSheets ◄──────────── ExecConf (actions, sheets, appConfig)
-  (in memory)
-       │
-       │   For each action (in order):
-       │
-       ├─ 1. CopySheetAction  ─── filter rows / copy columns to a new sheet
-       │
-       ├─ 2. ExportAction     ─── SOQL query → Salesforce → merge into sheet
-       │
-       ├─ 3. TransformAction  ─── eval() JS expressions, cross-sheet lookups
-       │
-       └─ 4. ImportAction     ─── send sheet to Salesforce (insert/update/upsert/delete)
-                                        │
-                                        ▼
-                                 Output CSVs (one per sheet)
-                                 with Id and error columns added
-```
-
-**Key design points:**
-
-- All data is held in memory as named `DataSheet` objects (header row + data rows).
-- When CSV files are loaded, the sheet name equals the filename without extension.
-- When an Excel file is loaded, each tab becomes a separate `DataSheet`.
-- Field name translation (human-readable → API name) is applied once at load time
-  using the `sheets` config block.
-- For `action: "insert"`, rows that already have an `Id` value are automatically
-  skipped, enabling idempotent re-runs.
-- For `action: "upsert"`, the `uniqueField` becomes the Bulk API `externalIdFieldName`
-  and must be a Salesforce external ID field.
-
----
-
-## Prerequisites
-
-- Node.js ≥ 18
-- A Salesforce org with API access enabled
-- One of the two supported authentication methods configured (see below)
-
----
-
-## Installation
+## Install and build
 
 ```bash
-git clone <repo-url>
-cd sfnodedataapp
 npm install
-npm run build        # compiles TypeScript to dist/
+npm run build
 ```
 
-For development, skip the build and use `ts-node` directly.
+## Offline YAML generator
 
----
-
-## Salesforce authentication
-
-The app supports two authentication modes. Set the appropriate environment variables
-in a `.env` file at the project root (never commit this file).
-
-**Priority:** if `SF_ACCESS_TOKEN` is present it takes precedence over
-`SF_CLIENT_ID` / `SF_CLIENT_SECRET`.
-
----
-
-### Option A — Connected App (Client Credentials flow)
-
-A server-to-server OAuth 2.0 flow. The app exchanges a Consumer Key + Secret for
-an access token automatically and transparently refreshes it when it expires
-(tokens are reused for up to 1 hour).
-
-#### Salesforce setup
-
-1. In Salesforce Setup go to **App Manager → New Connected App**.
-2. Enable **OAuth Settings**.
-3. Add the scope **Manage user data via APIs (api)**.
-4. Enable **Enable Client Credentials Flow**.
-5. After saving, note the **Consumer Key** (`SF_CLIENT_ID`) and
-   **Consumer Secret** (`SF_CLIENT_SECRET`).
-6. In **Manage Connected Apps**, assign a **Run As** user that has the required
-   object and field permissions.
-
-#### `.env` variables
-
-```env
-SF_CLIENT_ID=3MVG9...your_consumer_key...
-SF_CLIENT_SECRET=ABC123...your_consumer_secret...
-SF_INSTANCE_URL=https://your-org.my.salesforce.com
-```
-
----
-
-### Option B — Bearer Token (pre-obtained access token)
-
-Use an access token you already have. This token can come from any Salesforce
-OAuth flow or a SOAP login session:
-
-| Source | How to obtain the token |
-|---|---|
-| **OAuth Authorization Code / JWT Bearer** | The `access_token` field in the token response |
-| **SOAP Login** (`login.salesforce.com/services/Soap/c/…`) | The `<sessionId>` element in the SOAP response |
-| **Salesforce CLI** | `sf org display --target-org <alias> --json \| jq .result.accessToken` |
-| **Workbench / other tools** | Any tool that surfaces the session/access token |
-
-The token is passed directly as the `Authorization: Bearer <token>` header on
-every API call. It is **not** refreshed automatically — if it expires during a
-long run, re-run the tool with a fresh token.
-
-#### `.env` variables
-
-```env
-SF_ACCESS_TOKEN=00D...your_access_token...
-SF_INSTANCE_URL=https://your-org.my.salesforce.com
-```
-
-> `SF_CLIENT_ID` and `SF_CLIENT_SECRET` are not needed in this mode and are
-> ignored if `SF_ACCESS_TOKEN` is present.
-
----
-
-### Choosing between the two modes
-
-| | Connected App | Bearer Token |
-|---|---|---|
-| Requires Connected App setup | Yes | No |
-| Token is managed automatically | ✓ (refreshed every hour) | ✗ (caller's responsibility) |
-| Works in fully automated pipelines | ✓ | ✓ (if token is injected by CI/CD) |
-| Good for quick / interactive runs | ✗ | ✓ |
-
----
-
-## CLI usage
+Build the standalone configuration generator:
 
 ```bash
-# Development
-ts-node src/Index.ts -c <conf.yaml> [options]
-
-# Production (after npm run build)
-node dist/Index.js -c <conf.yaml> [options]
-
-# Standalone executable (no Node.js required)
-./dist-exec/sf-data-macos -c <conf.yaml> [options]
+npm run build:web
 ```
 
-### Options
+Open `dist-web/execconf_generator.html` directly in a browser. It is one offline
+HTML file with no CDN or sibling assets. The generator provides:
 
-| Flag | Long form | Description |
-|---|---|---|
-| `-c` | `--confFile <path>` | **(Required)** Path to the YAML config file |
-| `-e` | `--excelFile <path>` | Path to an Excel `.xlsx` input file |
-| `-v` | `--csvFiles <paths...>` | One or more CSV input files (space-separated) |
-| `-o` | `--outputFolder <path>` | Output directory for result CSVs (default: `./`) |
+- typed forms for GET, INSERT, UPDATE, UPSERT, DELETE, and TRANSFORM
+- CSV/Excel header discovery with opt-in field translations
+- sheet-aware action pickers and write-field suggestions
+- an offline, syntax-highlighted CommonJS transform editor with load, template,
+  direct-save, and download support
+- live required-field and canonical Zod validation
+- ordered action cards with drag-and-drop reordering
+- concise live YAML preview, copy, and save-to-file with download fallback
+- validated YAML import (comments and formatting are normalized)
+- automatic local draft persistence and confirmed reset
 
-### Examples
+The generator does not execute Salesforce operations. Configurations using
+`processingType: sf` execute through the Node CLI with the default org currently
+selected in Salesforce CLI, so no org alias is stored in YAML.
+
+Run from TypeScript:
 
 ```bash
-# Insert from a single CSV
-node dist/Index.js -c conf.yaml -v data.csv -o output/
-
-# Insert from an Excel file (all sheets are loaded)
-node dist/Index.js -c conf.yaml -e data.xlsx -o output/
-
-# Insert from multiple CSV files
-node dist/Index.js -c conf.yaml -v file1.csv file2.csv -o output/
-
-# Export only (no input file needed)
-node dist/Index.js -c export-conf.yaml -o output/
+npx ts-node src/Index.ts \
+  --confFile examples/02-insert-contacts/conf.yaml \
+  --csvFiles examples/02-insert-contacts/contacts.csv \
+  --outputFolder output
 ```
 
----
+To run only part of a pipeline, pass `--fromTask` and/or `--toTask` with an action
+name (case-insensitive) or a 1-based YAML index. The range is inclusive.
 
-## Configuration reference
+```bash
+# From "Insert Contacts" through the last action
+npx ts-node src/Index.ts -c conf.yaml --fromTask "Insert Contacts"
 
-The YAML config file controls the entire pipeline. All sections except `actions` are optional.
+# From the first action through "Get Accounts"
+npx ts-node src/Index.ts -c conf.yaml --toTask "Get Accounts"
 
-### Top-level structure
-
-```yaml
-appConfiguration:   # API settings (optional — defaults shown below)
-  ...
-
-sheets:             # Column name → API name mappings (optional)
-  - ...
-
-actions:            # Ordered list of pipeline steps (required)
-  - ...
+# A middle slice, by name or by index
+npx ts-node src/Index.ts -c conf.yaml --fromTask 2 --toTask "Insert Contacts"
 ```
 
----
+If only `--toTask` is set, execution starts at the first action. If only
+`--fromTask` is set, execution continues through the last action. Skipped
+actions do not run, so later steps must already have the sheets they need
+(from input files or a previous run's output CSVs).
 
-### `appConfiguration`
+Inputs can be multiple CSV files, one Excel workbook, or both. An Excel worksheet
+is treated as one logical CSV sheet. All generated files are CSV.
 
-Controls how the app connects to Salesforce and handles errors.
+Execution is reported as six explicit phases:
+
+1. Load and validate the YAML configuration.
+2. Optionally clean the output folder or previous error files.
+3. Read every CSV file and Excel worksheet completely.
+4. Apply configured input field mappings.
+5. Precheck and execute the selected action range sequentially in YAML order.
+6. Write all available sheets and error details as CSV files.
+
+If an action fails at runtime, phase 6 still runs so successful intermediate
+results and error sheets are not lost. Configuration and transform-script
+precheck failures stop before any output is written.
+
+## Authentication
+
+Salesforce CLI active org:
+
+```bash
+sf config set target-org=my-org-alias
+```
+
+Then use `processingType: sf`. The CLI resolves the active org access token and
+instance URL with `sf org display --json` and
+`sf org auth show-access-token --json`; Salesforce requests use the synchronous
+loader. Authentication is verified before the first pipeline action executes.
+
+Bearer token:
+
+```bash
+export SF_ACCESS_TOKEN="..."
+export SF_INSTANCE_URL="https://your-domain.my.salesforce.com"
+```
+
+Client credentials:
+
+```bash
+export SF_CLIENT_ID="..."
+export SF_CLIENT_SECRET="..."
+export SF_INSTANCE_URL="https://your-domain.my.salesforce.com"
+```
+
+## Configuration
 
 ```yaml
 appConfiguration:
-  processingType: "bulk"       # "bulk" (Bulk API v2) or "api" (sObject Collections)
-  bulkApiMaxWaitSec: 300       # Max seconds to wait for a Bulk API job to complete
-  bulkApiPollIntervalSec: 5    # Seconds between Bulk API job status polls
-  stopOnError: true            # Stop all actions if one fails
-  rollbackOnError: true        # Auto-delete successfully inserted records on failure
-  apiVersion: "63.0"           # Salesforce API version
-```
+  processingType: bulk
+  bulkApiMaxWaitSec: 300
+  bulkApiPollIntervalSec: 5
+  apiVersion: "63.0"
 
-| Field | Default | Description |
-|---|---|---|
-| `processingType` | `"bulk"` | `"bulk"` for Bulk API v2 (async, large volumes); `"api"` for sObject Collections (sync, up to 200 records/batch) |
-| `bulkApiMaxWaitSec` | `null` | Maximum wait time for a Bulk API job. Throws if exceeded |
-| `bulkApiPollIntervalSec` | `null` | Polling interval for Bulk API job status |
-| `stopOnError` | `false` | Stop the pipeline when any action returns errors |
-| `rollbackOnError` | `false` | When `stopOnError` is true, automatically delete all records inserted earlier in the same run |
-| `apiVersion` | `"58.0"` | Salesforce REST/Bulk API version |
-
----
-
-### `sheets`
-
-Maps human-readable column headers (as they appear in Excel/CSV) to Salesforce API
-field names. Applied once at load time. Only include columns that need renaming.
-
-```yaml
 sheets:
-  - name: "Sheet Name"         # Must match the Excel tab name or CSV filename (without extension)
+  - name: contacts
     fields:
-      - name: "Human Label"    # Column header in the source file
-        apiName: "SF_API__c"   # Salesforce API field name used throughout the pipeline
-```
+      - name: Account Name
+        apiName: AccountId
 
-**Example:** An Excel column `"Account Name"` mapped to `AccountId` so the transform
-step can populate it with a real Salesforce ID:
-
-```yaml
-sheets:
-  - name: "Contacts"
-    fields:
-      - name: "Account Name"
-        apiName: "AccountId"
-```
-
----
-
-### `actions`
-
-An ordered array of pipeline steps. Each action can contain any combination of the
-four sub-actions. They always run in this order: `copySheetAction` → `exportAction`
-→ `transformAction` → `importAction`.
-
-```yaml
 actions:
-  - name: "Action Label"          # Used in logs; also used as inputSheet if not specified
-    inputSheet: "SheetName"       # DataSheet to read from (required for transform/import)
-    outputSheet: "OutputSheet"    # DataSheet to write to (defaults to inputSheet)
-    waitStartingTime: 0           # Seconds to wait before starting this action
+  - type: get
+    name: Get Accounts
+    outputSheet: Accounts
+    query: SELECT Id, Name FROM Account
 
-    copySheetAction: ...
-    exportAction: ...
-    transformAction: ...
-    importAction: ...
+  - type: transform
+    name: Resolve Contact Accounts
+    inputSheet: contacts
+    outputSheet: contacts-ready
+    script: ./resolve-account-id.js
+
+  - type: insert
+    name: Insert Contacts
+    object: Contact
+    inputSheet: contacts-ready
+    outputSheet: Inserted Contact IDs
+    fields: [FirstName, LastName, Email, AccountId]
 ```
 
----
+Only this schema is accepted. Old compound entries such as `exportAction`,
+`transformAction`, `importAction`, `copySheetAction`, and the `objectsConf` key
+are invalid.
 
-#### `copySheetAction`
+### Application settings
 
-Copies (and optionally filters) columns from `inputSheet` into `outputSheet`.
-If `outputSheet` already exists, the copied rows are **merged** into it using
-`uniqueField` as the matching key.
+- `processingType`: `sf` (active Salesforce CLI org with synchronous requests),
+  `bulk` (Bulk API v2), or `api` (sObject Collections/Query API). GET actions
+  always use Bulk API v2 Query jobs; this setting controls write operations.
+- `bulkApiMaxWaitSec`: optional Bulk job timeout; default is 300 at runtime
+- `bulkApiPollIntervalSec`: optional Bulk polling interval; default is 5
+- `apiVersion`: Salesforce API version; defaults to `58.0`
+- `queryApiBatchSize`: REST Query API page size (200–2000, default `2000`).
+  GET actions first download Bulk Query CSV pages of up to 50,000 rows. If Bulk
+  Query rejects selected compound data, execution falls back to REST and uses
+  this setting. Salesforce can still reduce REST pages (for example to 250 rows).
+- `cleanOutputFolderBeforeExecution`: recursively delete existing output-folder
+  contents before loading inputs; defaults to `false`
+- `deleteErrorFilesBeforeExecution`: delete existing `*-errors.csv` files and
+  configured custom error-sheet CSVs; defaults to `false` and is redundant when
+  full cleanup is enabled
+
+For safety, full cleanup refuses the filesystem root, home directory, current
+working directory, any parent of the current working directory, or a folder
+containing the selected YAML/CSV/Excel inputs. Use a dedicated output subfolder.
+
+### Sheet mappings
+
+The optional `sheets` section translates headers on initially loaded CSV/Excel
+sheets. After this initial translation, actions and scripts use only the real
+field/API names.
+
+Sheet lookup is case-insensitive. The spelling used when a sheet is first created
+is retained for its output filename. Inputs whose names differ only by case are
+rejected.
+
+### Common action fields
+
+All action types support:
+
+- `type`: required lowercase action type
+- `name`: required; unique ignoring case
+- `waitBeforeSeconds`: optional delay, default `0`
+- `continueOnError`: optional, default `false`
+- `errorSheet`: optional logical name, default `<name>-errors`
+- `errorRows`: `errors` or `all`, default `errors`
+
+Logical action/sheet names cannot contain path separators, `..`, or control
+characters.
+
+An error sheet is created only if an error occurs. Row errors preserve the row
+shape and append `_ErrorMessage`. With `errorRows: all`, all rows are included
+and successful rows have a blank error message.
+
+Fatal errors (authentication, query, missing input, invalid runtime schema) always
+stop the pipeline and create one error row. Row errors finish the current action;
+`continueOnError` controls whether the next action runs. Accepted row errors
+produce a warning but exit with status 0.
+
+## Action reference
+
+### GET
 
 ```yaml
-copySheetAction:
-  condition: "'${IsActive}' === 'true'"   # JS expression; only matching rows are copied
-  uniqueField: "Name"                     # Merge key when outputSheet already exists
-  copyFields:                             # Columns to copy (if empty, copies all)
-    - name: "SourceColumn"               # Column name in inputSheet
-      apiName: "DestinationColumn"        # Column name in outputSheet
+- type: get
+  name: Get Accounts
+  outputSheet: Accounts
+  query: SELECT Id, Name FROM Account
 ```
 
----
+GET has no sheet input: SOQL is its source. It atomically replaces the output
+sheet. A successful query with no records creates an empty sheet with headers
+derived from the SELECT list. GET always uses Bulk API v2 Query jobs, including
+when `processingType` is `api` or `sf`, because the REST Query API often reduces
+pages far below `queryApiBatchSize` (for example 250 rows). Job status is logged
+while Salesforce runs the query, then CSV results are downloaded in pages of up
+to 50,000 rows. If Salesforce rejects compound fields in Bulk Query, GET logs a
+warning and automatically retries through the synchronous Query API.
 
-#### `exportAction`
-
-Runs a SOQL query against Salesforce and loads the results into `outputSheet`.
-If `outputSheet` already exists in memory (e.g., loaded from a CSV), the query
-results are **merged** into it using `uniqueField` as the matching key. The
-existing data is treated as master — its non-empty values are never overwritten.
+### INSERT
 
 ```yaml
-exportAction:
-  query: "SELECT Id, Name, Email FROM Contact WHERE IsActive = true"
-  uniqueField: "Name"    # Column used to match rows during merge (optional)
+- type: insert
+  name: Insert Accounts
+  object: Account
+  inputSheet: accounts
+  outputSheet: Inserted Account IDs
+  fields: [Name, Phone]
 ```
 
----
+`fields` is optional. When omitted, every input field is used, including `Id`.
+An explicit list must not contain `Id`; unselected input columns are ignored.
 
-#### `transformAction`
+`outputSheet` is optional. When present, it is replaced with successful
+`_InputRow,Id` mappings; `_InputRow` starts at 1 for the first data row. It may
+equal `inputSheet`, in which case the input is intentionally replaced. When
+omitted, returned IDs are discarded.
 
-Applies JavaScript expressions to field values. Expressions are evaluated with
-`eval()` after variable substitution. New fields are created automatically if the
-`name` does not exist as a column.
+### UPDATE
 
 ```yaml
-transformAction:
-  fieldsConf:
-    - name: "FieldApiName"           # Target field (existing or new)
-      transformation: "<expression>" # JS expression (see below)
+- type: update
+  name: Update Accounts
+  object: Account
+  inputSheet: accounts-ready
+  fields: [Id, Phone, Industry]
 ```
 
-See [Transformation expressions](#transformation-expressions) for the full syntax.
+When `fields` is omitted, every input field is used. An explicit list must contain
+`Id`. The input sheet must contain `Id`, and rows with blank IDs are errors.
+UPDATE does not accept `outputSheet`.
 
----
-
-#### `importAction`
-
-Sends the sheet data to Salesforce. Automatically handles:
-
-- **insert**: Rows that already have an `Id` are skipped.
-- **update**: Requires `Id` to be present (populated by a prior export).
-- **upsert**: Uses `uniqueField` as the Salesforce external ID field name.
-- **delete**: Only the `Id` column is sent.
+### UPSERT
 
 ```yaml
-importAction:
-  objectName: "Account"       # Salesforce object API name
-  action: "insert"            # insert | update | upsert | delete
-  uniqueField: "Name"         # Used for result mapping (and as external ID for upsert)
-  importFields:               # Subset of fields to send (if omitted, all columns are sent)
-    - "Name"
-    - "BillingCity"
+- type: upsert
+  name: Upsert Accounts
+  object: Account
+  inputSheet: accounts
+  externalIdField: External_Id__c
+  fields: [External_Id__c, Name, Phone]
 ```
 
-| Field | Description |
-|---|---|
-| `objectName` | Salesforce object API name (e.g. `Account`, `MyObject__c`) |
-| `action` | `insert`, `update`, `upsert`, or `delete` |
-| `uniqueField` | Used to match result rows back to source rows. For `upsert`, this must be an external ID field in Salesforce |
-| `importFields` | Explicit list of columns to send. When omitted, all non-empty columns are sent. The `Id` column is always included for update/delete |
+When `fields` is omitted, every input field is used. An explicit list must contain
+`externalIdField`. The input sheet must contain that field, and rows with a blank
+external ID are errors. UPSERT does not accept `outputSheet`.
 
----
+The HTML action editor's **Clear fields** control enables all-fields mode and
+causes the `fields` property to be omitted from generated YAML. Fields can also
+be added in bulk by pasting a header row copied from Excel (tab-separated) or
+CSV (comma/semicolon-separated); duplicates are removed automatically.
 
-## Transformation expressions
-
-Transformation strings are JavaScript expressions evaluated with `eval()`.
-Variable placeholders are substituted before evaluation.
-
-### Variable in the current row
-
-```
-${FieldApiName}
-```
-
-Substitutes the current row's value for that field.
+### DELETE
 
 ```yaml
-# Boolean string to number
-transformation: "Number('${Salary}') * 1.1"
-
-# Conditional
-transformation: "'${IsManager}' === 'true' ? 'Manager' : 'IC'"
-
-# Date calculation
-transformation: "String(Math.floor((Date.now() - new Date('${HireDate}').getTime()) / 86400000))"
+- type: delete
+  name: Delete Accounts
+  object: Account
+  inputSheet: account-ids
 ```
 
-### Cross-sheet lookup
+DELETE sends only `Id` and does not accept `fields` or `outputSheet`. Rows with a
+blank ID are errors.
 
-```
-${SheetName.MatchField.TargetField}
-```
-
-Finds the row in `SheetName` where `MatchField` equals **the current value of the
-field being transformed**, and returns `TargetField` from that row.
+### TRANSFORM
 
 ```yaml
-# Replace Account Name (currently in AccountId column) with the real Salesforce Id
-- name: "AccountId"
-  transformation: "'${Accounts.Name.Id}'"
-
-# Look up a related record's Id using a code field
-- name: "PriceBookId"
-  transformation: "'${PriceBooks.Code.Id}'"
+- type: transform
+  name: Resolve Account IDs
+  inputSheet: contacts
+  outputSheet: contacts-ready
+  script: ./resolve-account-id.js
 ```
 
-**How it works:** Before the transform runs, the field `AccountId` holds an account
-name (e.g., `Acme Corp`). The expression `'${Accounts.Name.Id}'` searches the
-`Accounts` sheet for a row where `Name == "Acme Corp"` and returns its `Id`. The
-result replaces the field value.
+`script` is a trusted CommonJS module path relative to the YAML file:
 
-### Computed unique key
-
-```yaml
-# Composite key for deduplication
-- name: "_UniqueId"
-  transformation: "'${ObjectAId}' + '|' + '${ObjectBId}'"
+```js
+module.exports = function transform(row, { lookup, lookupAll }) {
+  const account = lookup('Accounts', 'Name', row.AccountId);
+  if (!account) throw new Error(`Unknown account: ${row.AccountId}`);
+  row.AccountId = account.Id;
+  delete row.LegacyColumn;
+  return row;
+};
 ```
 
-Fields prefixed with `_` are helper columns — they are included in output CSVs but
-filtered out of Salesforce payloads when using `importFields`.
+In the HTML generator, a transform action can reference a path directly or load
+an existing `.js`/`.cjs` file into the syntax-highlighted editor. **New template**
+creates the required CommonJS function and documents fields from the selected
+input sheet. **Save script** writes to a selected local file when the browser
+supports the File System Access API; other browsers download the script instead.
+The edited source is kept in the local browser draft but is deliberately not
+embedded in YAML, so save the script at the configured relative path before
+running the pipeline.
 
----
+The script receives a mutable dictionary whose keys are mapped/API field names.
+It can add, change, or delete fields. Return the full row (the same object or a
+replacement), or `null` to omit the row. Returned values are converted to
+strings, and output columns are the union of returned keys in first-seen order.
 
-## Output files
+`lookup(sheetName, matchField, value)` returns the first exact string match or
+`undefined`. `lookupAll` returns every exact match. Lookup rows are copies.
 
-After execution, one CSV file is written to `outputFolder` for each DataSheet
-processed. Result columns are appended automatically:
+All transform modules are loaded before the first action. A missing/invalid module
+is a configuration preflight failure: no actions or output generation occur.
+Exceptions thrown per row are caught and written to the action error sheet using
+the partially transformed row. The destination is replaced only after processing
+completes.
 
-| Column | When added | Description |
-|---|---|---|
-| `Id` | After a successful `insert` | The Salesforce record ID assigned to the new record |
-| `_ErrorInsertMessage` | After `insert`, `update`, or `upsert` | Per-row error message; empty on success |
-| `_ErrorRemoveMessage` | After `delete` | Per-row error message for delete failures |
+Configured scripts run as normal trusted Node.js modules and can access Node APIs.
+Only run configuration and scripts you trust.
 
----
+## Output and failures
 
-## Examples
+All in-memory sheets—including untouched inputs, generated outputs, and created
+error sheets—are written to the output folder. Existing CSV files are replaced.
 
-The [`examples/`](./examples/) folder contains six sequential examples that demonstrate
-every major feature using a consistent dataset (Accounts → Contacts → Opportunities).
+If a runtime action fails, sheets produced so far are still written, then the CLI
+exits non-zero. YAML validation and transform preflight failures exit non-zero
+without writing CSV files.
 
-| # | Example | Concepts |
-|---|---|---|
-| 01 | [Insert Accounts](./examples/01-insert-accounts/) | Simple insert, Bulk API v2, rollback |
-| 02 | [Insert Contacts](./examples/02-insert-contacts/) | Multi-step, cross-sheet lookup, sObject Collections |
-| 03 | [Insert Opportunities](./examples/03-insert-opportunities/) | Excel input, idempotent insert, Bulk API v2 |
-| 04 | [Update Opportunities](./examples/04-update-opportunities/) | Export-then-update, master/secondary merge |
-| 05 | [Export to CSV](./examples/05-export-to-csv/) | Pure SOQL export, no input file |
-| 06 | [Transform Only](./examples/06-transform-only/) | JS expressions, no Salesforce required |
-
-See [`examples/README.md`](./examples/README.md) for the full sequence and quick-start commands.
-
----
-
-## Troubleshooting
-
-### Authentication errors
-
-**Client Credentials flow**
-- Verify `SF_CLIENT_ID`, `SF_CLIENT_SECRET`, and `SF_INSTANCE_URL` are set correctly in `.env`.
-- Ensure the Connected App has **Client Credentials Flow** enabled and a **Run As** user
-  assigned with the required object and field permissions.
-- Check that `SF_INSTANCE_URL` does not have a trailing slash.
-
-**Bearer Token flow**
-- Verify the token is still valid and has not expired (Salesforce access tokens expire
-  after ~2 hours by default; SOAP session IDs after the org's session timeout setting).
-- Make sure `SF_INSTANCE_URL` matches the org the token was issued for.
-- If `SF_ACCESS_TOKEN` is set in `.env`, it takes priority over `SF_CLIENT_ID` / `SF_CLIENT_SECRET`.
-  Remove or comment out `SF_ACCESS_TOKEN` to switch back to Client Credentials mode.
-
-### `Sheet "X" not found`
-
-- Confirm the `inputSheet` name in the config matches the Excel tab name or the
-  CSV filename (without `.csv`).
-- Sheet names are case-sensitive.
-
-### `Value "X" not found in sheet "Y" and field "Z"`
-
-- A cross-sheet lookup failed because the lookup value was not found in the target sheet.
-- Check that the referenced sheet was populated by a prior action (export or CSV load).
-- Check for trailing spaces or encoding differences between the CSV and the lookup sheet.
-
-### Bulk API job times out
-
-- Increase `bulkApiMaxWaitSec` in `appConfiguration`.
-- For very large files, also increase `bulkApiPollIntervalSec` to reduce API calls.
-
-### Records are duplicated on re-run
-
-- Add an `exportAction` before the `importAction` to fetch existing records.
-- Use `uniqueField` on the export to merge by a natural key (e.g., `Name` or `Email`).
-- Rows that already have an `Id` after the merge are automatically skipped on insert.
-
-### Rollback deletes records unexpectedly
-
-- Rollback is triggered when `stopOnError: true` and `rollbackOnError: true` and any
-  action fails. It deletes **all** records inserted earlier in the same run.
-- Set `rollbackOnError: false` if you want partial results to persist on failure.
+See [`examples/`](examples/) for runnable configurations.

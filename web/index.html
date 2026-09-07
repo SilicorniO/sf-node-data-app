@@ -1,32 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SF Data · Config Generator</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
-  <!-- sfdata pipeline library: inlined during build; served from dist-web/ in dev -->
-  <script src="/dist-web/sfdata.js" data-sfdata-lib></script>
+  <meta name="description" content="Build and validate sf-data YAML pipeline configurations.">
+  <title>sf-data · YAML Configuration Generator</title>
   <link rel="stylesheet" href="styles/main.css">
-  <script type="module" src="src/main.js"></script>
 </head>
-<body class="bg-slate-100 min-h-screen text-slate-700 text-sm">
-
-  <sf-header></sf-header>
-  <sf-tab-bar></sf-tab-bar>
-
-  <main class="max-w-screen-xl mx-auto p-4 space-y-4">
-    <sf-config-panel></sf-config-panel>
-    <sf-sheets-panel></sf-sheets-panel>
-    <sf-actions-panel></sf-actions-panel>
-    <sf-io-panel></sf-io-panel>
-    <sf-execute-panel></sf-execute-panel>
-  </main>
-
-  <sf-action-modal></sf-action-modal>
-
-  <div id="toast" class="fixed bottom-5 right-5 z-[200] hidden px-4 py-2.5 rounded-xl text-white text-xs font-semibold shadow-xl transition-all"></div>
-
+<body>
+  <sf-generator-app></sf-generator-app>
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>

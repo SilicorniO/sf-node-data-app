@@ -1,339 +1,433 @@
 import { Action } from '../model/Action';
 import { DataSheet } from '../model/DataSheet';
-import { DataSheetProcessor } from './DataSheetProcessor';
+import { DeleteAction } from '../model/DeleteAction';
 import { ExecConf } from '../model/ExecConf';
-import { SalesforceBulkApiLoader } from '../salesforce/SalesforceBulkApiLoader';
-import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
-import { ImportAction } from '../model/ImportAction';
-import { SheetField } from '../model/SheetField';
+import { GetAction } from '../model/GetAction';
+import { InsertAction } from '../model/InsertAction';
+import { TransformAction } from '../model/TransformAction';
+import { UpdateAction } from '../model/UpdateAction';
+import { UpsertAction } from '../model/UpsertAction';
+import { WriteAction } from '../model/WriteAction';
 import { SalesforceApiLoader } from '../salesforce/SalesforceApiLoader';
+import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
+import { SalesforceBulkApiLoader } from '../salesforce/SalesforceBulkApiLoader';
+import {
+  PreparedWriteRow,
+  SalesforceDataLoader,
+  SalesforceWriteRequest,
+  WriteRowResult,
+} from '../salesforce/SalesforceOperation';
+import { SheetRegistry } from './SheetRegistry';
+import { TransformRow, TransformScriptRunner } from './TransformScriptRunner';
 
-const ROLLBACK_ACTION_PREFIX = 'Rollback - ';
+export interface PipelineResult {
+  hadContinuedErrors: boolean;
+}
+
+export interface ActionExecutionRange {
+  fromTask?: string;
+  toTask?: string;
+}
+
+export interface ResolvedActionRange {
+  start: number;
+  end: number;
+}
+
+export class PipelineExecutionError extends Error {
+  constructor(readonly actionName: string, message: string) {
+    super(message);
+    this.name = 'PipelineExecutionError';
+  }
+}
+
+export class ConfigurationPreflightError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigurationPreflightError';
+  }
+}
+
 export class ActionProcessor {
-  /**
-   * Processes a list of actions: executes transformation and import for each action if configured.
-   * @param execConf The execution configuration (needed for import).
-   * @param sheetsData Dictionary of DataSheet objects.
-   */
   static async processActions(
     execConf: ExecConf,
-    sheetsData: { [sheetName: string]: DataSheet },
-  ): Promise<void> {
-    for (const action of execConf.actions) {
-      if (action.waitStartingTime > 0) {
-        console.log(`Waiting ${action.waitStartingTime} ms before processing action "${action.name}"...`);
-        await new Promise(resolve => setTimeout(resolve, action.waitStartingTime * 1000));
-      }
-      console.log(`· Processing action "${action.name}"...`);
-
-      const inputSheetName = action.inputSheet;
-      const outputSheetName = action.outputSheet || inputSheetName;
-
-      // 1. CopySheetAction
-      let resultOk = await this.executeCopySheetAction(action, sheetsData, inputSheetName, outputSheetName);
-      if (!resultOk) {
-        return;
-      }
-
-      // 2. ExportAction
-      resultOk = await this.executeExportAction(execConf, action, sheetsData, outputSheetName);
-      if (!resultOk) {
-        return;
-      }
-
-      // 3. Transformation
-      resultOk = await this.executeTransformAction(execConf, action, sheetsData, inputSheetName);
-      if (!resultOk) {
-        return;
-      }
-
-      // 4. ImportAction
-      resultOk = await this.executeImportAction(execConf, action, sheetsData, inputSheetName, outputSheetName);
-      if (!resultOk) {
-        return;
-      }
-    }
-  }
-
-  private static async executeCopySheetAction(
-    action: Action,
-    sheetsData: { [sheetName: string]: DataSheet },
-    inputSheetName: string,
-    outputSheetName: string
-  ): Promise<boolean> {
-    if (!action.copySheetAction) {
-      return true;
-    }
-
-    const dataSheet = sheetsData[inputSheetName];
-    if (!dataSheet) {
-      console.error(`Input DataSheet "${inputSheetName}" not found for copySheetAction.`);
-      return false;
-    }
-
-    // get fields to copy, if there are no fields we copy all
-    let copyFields = action.copySheetAction.copyFields;
-    if (copyFields.length == 0) {
-      copyFields = dataSheet.fieldNames.map(fieldName => {
-        return new SheetField(fieldName, fieldName)
-      });
-    }
-
-    // Build new DataSheet with only the specified fields (by name), but use apiName for the output fieldNames
-    const fieldIndexes = copyFields.map(
-      field => dataSheet.fieldNames.indexOf(field.name)
-    );
-    const validFields = copyFields
-      .map((field, i) => ({ idx: fieldIndexes[i], apiName: field.apiName }))
-      .filter(f => f.idx !== -1);
-
-    // filter data rows to copy
-    let rows = dataSheet.data;
-    if (action.copySheetAction.condition) {
-      rows = DataSheetProcessor.filterRowsByCondition(
-        dataSheet,
-        action.copySheetAction.condition
-      );
-    }
-
-    const newFieldNames = validFields.map(f => f.apiName);
-    const newData = rows.map(row =>
-      validFields.map(f => row[f.idx])
-    );
-
-    const newSheet: DataSheet = {
-      name: outputSheetName,
-      fieldNames: newFieldNames,
-      data: newData,
-    };
-
-    // Overwrite or merge the output sheet
-    if (sheetsData[outputSheetName]) {
-      sheetsData[outputSheetName] = DataSheetProcessor.mergeDataSheets(sheetsData[outputSheetName], newSheet, action.copySheetAction.uniqueField);
-    } else {
-      sheetsData[outputSheetName] = newSheet;
-    }
-
-    return true;
-  }
-
-  private static async executeExportAction(
-    execConf: ExecConf,
-    action: Action,
-    sheetsData: { [sheetName: string]: DataSheet },
-    outputSheetName: string
-  ): Promise<boolean> {
-    if (!action.exportAction) {
-      return true;
-    }
-
-    console.log(`Exporting data for "${outputSheetName}" from Salesforce...`);
+    sheetsInput: SheetRegistry | { [sheetName: string]: DataSheet },
+    executionRange: ActionExecutionRange = {}
+  ): Promise<PipelineResult> {
+    const registry = sheetsInput instanceof SheetRegistry ? sheetsInput : new SheetRegistry(sheetsInput);
+    const externalSheets = sheetsInput instanceof SheetRegistry ? undefined : sheetsInput;
+    const transformRunner = new TransformScriptRunner();
     try {
-      const conn = await SalesforceAuthenticator.authenticate();
-      if (!conn || !conn.accessToken) {
-        throw new Error('Salesforce authentication failed. No connection object returned.');
-      }
-      let exportDataSheet;
-      if (execConf.appConfiguration.processingType == "api") {
-        const apiBulkLoader = new SalesforceApiLoader(execConf.appConfiguration);
-        exportDataSheet = await apiBulkLoader.apiQuery(
-          conn.instanceUrl,
-          conn.accessToken,
-          action.exportAction,
-          outputSheetName
-        );
-      } else {
-        const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
-        exportDataSheet = await apiBulkLoader.bulkApiQuery(
-          conn.instanceUrl,
-          conn.accessToken,
-          action.exportAction,
-          outputSheetName
-        );
-      }
-
-      // Overwrite or merge the output sheet
-      if (sheetsData[outputSheetName]) {
-        sheetsData[outputSheetName] = DataSheetProcessor.mergeDataSheets(sheetsData[outputSheetName], exportDataSheet, action.exportAction.uniqueField);
-      } else {
-        sheetsData[outputSheetName] = exportDataSheet;
-      }
-      console.log(`Exported data for "${outputSheetName}" loaded into sheetsData.`);
-    } catch (error: any) {
-      console.error(`Error exporting data for "${outputSheetName}": ${error.message}`);
-      if (execConf.appConfiguration.stopOnError) {
-        await ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  private static async executeTransformAction(
-    execConf: ExecConf,
-    action: Action,
-    sheetsData: { [sheetName: string]: DataSheet },
-    inputSheetName: string
-  ): Promise<boolean> {
-    const dataSheet = sheetsData[inputSheetName];
-    if (!dataSheet) {
-      if (action.transformAction) {
-        console.error(`DataSheet "${inputSheetName}" not found. Skipping transformation.`);
-      }
-      return true;
-    }
-
-    if (action.transformAction && action.transformAction.fieldsConf) {
-      console.log(`Processing transformation for DataSheet "${inputSheetName}"...`);
+      let range: ResolvedActionRange;
       try {
-        DataSheetProcessor.processDataSheet(dataSheet, action.transformAction, sheetsData);
+        range = resolveActionRange(execConf.actions, executionRange.fromTask, executionRange.toTask);
       } catch (error: any) {
-        console.error(`Error processing transformation for DataSheet "${inputSheetName}": ${error.message}`);
-        if (execConf.appConfiguration.stopOnError) {
-          await ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
-          return false;
+        throw new ConfigurationPreflightError(error.message);
+      }
+      const selectedActions = range.end < range.start ? [] : execConf.actions.slice(range.start, range.end + 1);
+
+      try {
+        const transforms = selectedActions.filter(
+          (action): action is TransformAction => action.type === 'transform'
+        ) as TransformAction[];
+        if (transforms.length > 0) {
+          console.log(`      Precheck: loading ${transforms.length} transform script(s).`);
+        }
+        transformRunner.preflight(transforms);
+      } catch (error: any) {
+        throw new ConfigurationPreflightError(error.message);
+      }
+
+      let hadContinuedErrors = false;
+      for (let index = range.start; index <= range.end; index++) {
+        const action = execConf.actions[index];
+        if (action.waitBeforeSeconds > 0) {
+          console.log(`      [${index + 1}/${execConf.actions.length}] Waiting ${action.waitBeforeSeconds}s before "${action.name}".`);
+          await new Promise(resolve => setTimeout(resolve, action.waitBeforeSeconds * 1000));
+        }
+        const startedAt = Date.now();
+        console.log(`      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} "${action.name}" — started`);
+        let hadRowErrors: boolean;
+        try {
+          hadRowErrors = await this.executeAction(execConf, action, registry, transformRunner);
+        } catch (error) {
+          console.error(
+            `      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} `
+            + `"${action.name}" — failed after ${formatDuration(Date.now() - startedAt)}`
+          );
+          throw error;
+        }
+        if (hadRowErrors) {
+          console.warn(
+            `      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} `
+            + `"${action.name}" — completed with row errors in ${formatDuration(Date.now() - startedAt)}`
+          );
+          if (!action.continueOnError) {
+            throw new PipelineExecutionError(action.name, `Action "${action.name}" completed with row errors.`);
+          }
+          hadContinuedErrors = true;
+        } else {
+          console.log(
+            `      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} `
+            + `"${action.name}" — completed in ${formatDuration(Date.now() - startedAt)}`
+          );
         }
       }
+      return { hadContinuedErrors };
+    } finally {
+      if (externalSheets) {
+        for (const key of Object.keys(externalSheets)) delete externalSheets[key];
+        Object.assign(externalSheets, registry.toObject());
+      }
     }
-
-    return true;
   }
 
-  private static async executeImportAction(
+  private static async executeAction(
     execConf: ExecConf,
     action: Action,
-    sheetsData: { [sheetName: string]: DataSheet },
-    inputSheetName: string,
-    outputSheetName: string
+    sheets: SheetRegistry,
+    transformRunner: TransformScriptRunner
   ): Promise<boolean> {
-    if (!action.importAction) {
-      return true;
-    }
-
-    const dataSheet = sheetsData[inputSheetName];
-    if (!dataSheet) {
-      console.error(`DataSheet "${inputSheetName}" not found. Skipping import.`);
-      return execConf.appConfiguration.stopOnError ? false : true;
-    }
-
-    console.log(`Importing DataSheet "${inputSheetName}" to Salesforce...`);
     try {
-      const conn = await SalesforceAuthenticator.authenticate();
-      if (!conn || !conn.accessToken) {
-        throw new Error('Salesforce authentication failed. No connection object returned.');
-      }
-
-      // If outputSheetName is defined and different from inputSheetName, clone the input sheet for output
-      let importDataSheet: DataSheet = dataSheet;
-      if (outputSheetName && outputSheetName !== inputSheetName) {
-        importDataSheet = DataSheetProcessor.cloneDataSheet(dataSheet, outputSheetName);
-        sheetsData[outputSheetName] = importDataSheet;
-      }
-
-      let resultSheet;
-      if (execConf.appConfiguration.processingType == "api") {
-        const apiBulkLoader = new SalesforceApiLoader(execConf.appConfiguration);
-        resultSheet = await apiBulkLoader.apiOperation(
-          conn.instanceUrl,
-          conn.accessToken,
-          action.importAction,
-          importDataSheet
-        );
-      } else {
-        const apiBulkLoader = new SalesforceBulkApiLoader(execConf.appConfiguration);
-        resultSheet = await apiBulkLoader.bulkApiOperation(
-          conn.instanceUrl,
-          conn.accessToken,
-          action.importAction,
-          importDataSheet
-        );
-      }
-
-      console.log(`Data loading for sheet "${outputSheetName}" completed${resultSheet ? '' : ' with errors'}.`);
-
-      if (!resultSheet && execConf.appConfiguration.stopOnError) {
-        throw new Error(`Errors loading data for sheet "${outputSheetName}". Stopping further processing.`);
+      switch (action.type) {
+        case 'get':
+          await this.executeGet(execConf, action as GetAction, sheets);
+          return false;
+        case 'transform':
+          return this.executeTransform(action as TransformAction, sheets, transformRunner);
+        case 'insert':
+        case 'update':
+        case 'upsert':
+        case 'delete':
+          return await this.executeWrite(execConf, action as WriteAction, sheets);
       }
     } catch (error: any) {
-      console.error(`Error loading data for sheet "${outputSheetName}": ${error.message}`);
-      if (execConf.appConfiguration.stopOnError) {
-        ActionProcessor.executeRollbackOnError(execConf, sheetsData, action, true);
-        return false
-      }
-    }
-
-    return true;
-  }
-
-  private static async executeRollbackOnError(
-    execConf: ExecConf,
-    sheetsData: { [sheetName: string]: DataSheet },
-    action: Action,
-    includeAction: boolean
-  ): Promise<void> {
-    if (execConf.appConfiguration.rollbackOnError) {
-      console.error(`Rolling back changes from action "${action.name}".`);
-      const indexAction = execConf.actions.indexOf(action) + (includeAction ? 0 : -1);
-
-      // Generate a rollback execConf with only delete actions
-      const rollbackExecConf = ActionProcessor.generateRollbackExecConf(execConf);
-      rollbackExecConf.actions = this.generateRollbackActions(execConf.actions, indexAction);
-
-      // process rollback actions
-      await this.processActions(rollbackExecConf, sheetsData);
+      if (error instanceof PipelineExecutionError) throw error;
+      this.writeFatalErrorSheet(action, sheets, error.message);
+      throw new PipelineExecutionError(action.name, `Action "${action.name}" failed: ${error.message}`);
     }
   }
 
-  private static generateRollbackExecConf(execConf: ExecConf): ExecConf {
-    const execConfRollback = new ExecConf(
-      execConf.appConfiguration,
-      [],
-      []
+  private static async executeGet(execConf: ExecConf, action: GetAction, sheets: SheetRegistry): Promise<void> {
+    const connection = await this.connection();
+    let result: DataSheet;
+    try {
+      result = await new SalesforceBulkApiLoader(execConf.appConfiguration).query(
+        connection.instanceUrl,
+        connection.accessToken,
+        action.query,
+        action.outputSheet
+      );
+    } catch (error: any) {
+      if (!isBulkQueryUnsupported(error)) throw error;
+      console.warn(
+        '        Query: Bulk API v2 does not support a selected field; '
+        + `falling back to the synchronous Query API (batchSize ${execConf.appConfiguration.queryApiBatchSize}).`
+      );
+      result = await new SalesforceApiLoader(execConf.appConfiguration).query(
+        connection.instanceUrl,
+        connection.accessToken,
+        action.query,
+        action.outputSheet
+      );
+    }
+    sheets.set(action.outputSheet, result);
+    console.log(`        Output "${action.outputSheet}": ${result.data.length} row(s).`);
+  }
+
+  private static executeTransform(
+    action: TransformAction,
+    sheets: SheetRegistry,
+    runner: TransformScriptRunner
+  ): boolean {
+    const input = sheets.require(action.inputSheet);
+    const result = runner.run(action, input, sheets);
+    sheets.set(action.outputSheet, TransformScriptRunner.rowsToDataSheet(action.outputSheet, result.outputRows));
+    console.log(
+      `        Rows: ${input.data.length} input, ${result.outputRows.length} output, `
+      + `${result.errorRows.length} error(s).`
     );
-    execConfRollback.appConfiguration.stopOnError = false;
-    execConfRollback.appConfiguration.rollbackOnError = false;
-    return execConfRollback;
-  }
-
-  /**
-   * Generates a new array of actions for rollback (delete) from the given actions array,
-   * starting from the given index and going backwards to 0.
-   * Each new action will have only an ImportAction with action="delete".
-   * The transformAction will be omitted.
-   * @param actions The original array of actions.
-   * @param index The index to start the rollback from.
-   * @returns An array of rollback (delete) actions.
-   */
-  private static generateRollbackActions(actions: Action[], index: number): Action[] {
-    const rollbackActions: Action[] = [];
-    for (let i = index; i >= 0; i--) {
-      const action = actions[i];
-      if (action.importAction) {
-        const importName = action.importAction.objectName;
-        // Create a delete ImportAction targeting the same SF object.
-        // objectName must be the real SF API object name (e.g. "Account"), not
-        // prefixed — the prefix is for the human-readable action label only.
-        const deleteImportAction = new ImportAction(
-          importName,
-          '',
-          'delete',
-          []
-        );
-        // Use the original inputSheet so we find the sheet that holds the Ids
-        // that were written back after insert.  outputSheet defaults to inputSheet
-        // in the Action constructor when left empty.
-        rollbackActions.push(new Action(
-          ROLLBACK_ACTION_PREFIX + action.name,
-          action.inputSheet,
-          action.inputSheet,
-          0,
-          undefined,
-          deleteImportAction
-        ));
-      }
+    if (result.errorRows.length > 0) {
+      const rows = action.errorRows === 'all' ? result.allRowsForErrors : result.errorRows;
+      sheets.set(action.errorSheet, TransformScriptRunner.rowsToDataSheet(action.errorSheet, rows));
+      return true;
     }
-    return rollbackActions;
+    return false;
   }
 
+  private static async executeWrite(
+    execConf: ExecConf,
+    action: WriteAction,
+    sheets: SheetRegistry
+  ): Promise<boolean> {
+    const input = sheets.require(action.inputSheet);
+    const request = this.prepareWriteRequest(action, input);
+    const localErrors = request.localErrors;
+    let apiResults: WriteRowResult[] = [];
+
+    if (request.request.rows.length > 0) {
+      const connection = await this.connection();
+      apiResults = await this.loader(execConf).write(
+        connection.instanceUrl,
+        connection.accessToken,
+        request.request
+      );
+    }
+    const results = [...localErrors, ...apiResults].sort((left, right) => left.inputIndex - right.inputIndex);
+    const errors = results.filter(result => !result.success);
+    console.log(
+      `        Rows: ${input.data.length} input, ${request.request.rows.length} submitted, `
+      + `${errors.length} error(s).`
+    );
+
+    if (action.type === 'insert') {
+      this.writeInsertOutput(action as InsertAction, sheets, apiResults);
+    }
+    if (errors.length > 0) {
+      this.writeRowErrorSheet(action, input, results, sheets);
+      return true;
+    }
+    return false;
+  }
+
+  private static prepareWriteRequest(
+    action: WriteAction,
+    input: DataSheet
+  ): { request: SalesforceWriteRequest; localErrors: WriteRowResult[] } {
+    const operation = action.type as SalesforceWriteRequest['operation'];
+    const configuredFields = operation === 'delete'
+      ? ['Id']
+      : (action as InsertAction | UpdateAction | UpsertAction).fields;
+    const fields = configuredFields.length > 0
+      ? configuredFields
+      : input.fieldNames;
+    if (fields.length === 0) {
+      throw new Error(`Input sheet "${input.name}" has no fields available for ${operation.toUpperCase()}.`);
+    }
+    const fieldIndexes = new Map(fields.map(field => [field, input.fieldNames.indexOf(field)]));
+    const missingFields = fields.filter(field => fieldIndexes.get(field) === -1);
+    if (missingFields.length > 0) {
+      throw new Error(`Input sheet "${input.name}" is missing required fields: ${missingFields.join(', ')}.`);
+    }
+
+    const idIndex = input.fieldNames.indexOf('Id');
+    const externalIdField = operation === 'upsert' ? (action as UpsertAction).externalIdField : undefined;
+    const externalIdIndex = externalIdField ? input.fieldNames.indexOf(externalIdField) : -1;
+    if ((operation === 'update' || operation === 'delete') && idIndex < 0) {
+      throw new Error(`Input sheet "${input.name}" is missing required field: Id.`);
+    }
+    if (operation === 'upsert' && externalIdIndex < 0) {
+      throw new Error(`Input sheet "${input.name}" is missing required field: ${externalIdField}.`);
+    }
+    const rows: PreparedWriteRow[] = [];
+    const localErrors: WriteRowResult[] = [];
+
+    input.data.forEach((values, inputIndex) => {
+      let validationError: string | undefined;
+      if ((operation === 'update' || operation === 'delete') && !values[idIndex]) {
+        validationError = `${operation.toUpperCase()} rows require a non-empty Id.`;
+      } else if (operation === 'upsert' && !values[externalIdIndex]) {
+        validationError = `UPSERT rows require a non-empty ${externalIdField}.`;
+      }
+      if (validationError) {
+        localErrors.push({ inputIndex, success: false, error: validationError });
+        return;
+      }
+      rows.push({
+        inputIndex,
+        values: Object.fromEntries(fields.map(field => [field, values[fieldIndexes.get(field)!] ?? ''])),
+      });
+    });
+
+    return {
+      request: {
+        operation,
+        object: action.object,
+        fields,
+        externalIdField,
+        rows,
+      },
+      localErrors,
+    };
+  }
+
+  private static writeInsertOutput(
+    action: InsertAction,
+    sheets: SheetRegistry,
+    results: WriteRowResult[]
+  ): void {
+    if (!action.outputSheet) return;
+    const successful = results.filter(result => result.success && result.id);
+    sheets.set(action.outputSheet, {
+      name: action.outputSheet,
+      fieldNames: ['_InputRow', 'Id'],
+      data: successful.map(result => [String(result.inputIndex + 1), result.id!]),
+    });
+  }
+
+  private static writeRowErrorSheet(
+    action: WriteAction,
+    input: DataSheet,
+    results: WriteRowResult[],
+    sheets: SheetRegistry
+  ): void {
+    const errors = new Map(results.filter(result => !result.success).map(result => [result.inputIndex, result.error ?? 'Unknown error']));
+    const rowIndexes = action.errorRows === 'all'
+      ? input.data.map((_row, index) => index)
+      : Array.from(errors.keys()).sort((left, right) => left - right);
+    sheets.set(action.errorSheet, {
+      name: action.errorSheet,
+      fieldNames: [...input.fieldNames, '_ErrorMessage'],
+      data: rowIndexes.map(index => [...input.data[index], errors.get(index) ?? '']),
+    });
+  }
+
+  private static writeFatalErrorSheet(action: Action, sheets: SheetRegistry, message: string): void {
+    let fields: string[] = [];
+    if ('inputSheet' in action) {
+      fields = sheets.get(String(action.inputSheet))?.fieldNames ?? [];
+    }
+    sheets.set(action.errorSheet, {
+      name: action.errorSheet,
+      fieldNames: [...fields, '_ErrorMessage'],
+      data: [[...fields.map(() => ''), message]],
+    });
+  }
+
+  private static loader(execConf: ExecConf): SalesforceDataLoader {
+    return execConf.appConfiguration.processingType === 'api'
+      || execConf.appConfiguration.processingType === 'sf'
+      ? new SalesforceApiLoader(execConf.appConfiguration)
+      : new SalesforceBulkApiLoader(execConf.appConfiguration);
+  }
+
+  private static async connection(): Promise<{ instanceUrl: string; accessToken: string }> {
+    const connection = await SalesforceAuthenticator.authenticate();
+    if (!connection?.instanceUrl || !connection.accessToken) {
+      throw new Error('Salesforce authentication failed.');
+    }
+    return { instanceUrl: connection.instanceUrl, accessToken: connection.accessToken };
+  }
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds < 1000) return `${milliseconds}ms`;
+  return `${(milliseconds / 1000).toFixed(1)}s`;
+}
+
+export function resolveActionRange(
+  actions: Array<{ name: string }>,
+  fromTask?: string,
+  toTask?: string
+): ResolvedActionRange {
+  if (actions.length === 0) {
+    if (fromTask || toTask) {
+      throw new Error(
+        `Cannot select ${fromTask ? `fromTask "${fromTask}"` : `toTask "${toTask}"`}: the configuration has no actions.`
+      );
+    }
+    return { start: 0, end: -1 };
+  }
+
+  const start = fromTask ? findActionIndex(actions, fromTask, 'fromTask') : 0;
+  const end = toTask ? findActionIndex(actions, toTask, 'toTask') : actions.length - 1;
+  if (start > end) {
+    throw new Error(
+      `fromTask "${actions[start].name}" (action ${start + 1}) is after `
+      + `toTask "${actions[end].name}" (action ${end + 1}).`
+    );
+  }
+  return { start, end };
+}
+
+export function describeActionRange(
+  actions: Array<{ name: string }>,
+  range: ResolvedActionRange
+): string {
+  if (actions.length === 0 || range.end < range.start) {
+    return '0 action(s)';
+  }
+  if (range.start === 0 && range.end === actions.length - 1) {
+    return `${actions.length} action(s) in YAML order`;
+  }
+  const first = actions[range.start].name;
+  const last = actions[range.end].name;
+  if (range.start === range.end) {
+    return `action ${range.start + 1} of ${actions.length} ("${first}")`;
+  }
+  return `actions ${range.start + 1}–${range.end + 1} of ${actions.length} ("${first}" through "${last}")`;
+}
+
+function findActionIndex(
+  actions: Array<{ name: string }>,
+  selector: string,
+  flagName: 'fromTask' | 'toTask'
+): number {
+  const trimmed = selector.trim();
+  if (!trimmed) {
+    throw new Error(`${flagName} must be an action name or a 1-based index.`);
+  }
+
+  const byName = actions.findIndex(action => action.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase());
+  if (byName >= 0) return byName;
+
+  if (/^\d+$/.test(trimmed)) {
+    const index = Number(trimmed) - 1;
+    if (index < 0 || index >= actions.length) {
+      throw new Error(
+        `${flagName} index ${trimmed} is out of range. There ${actions.length === 1 ? 'is' : 'are'} `
+        + `${actions.length} action(s).`
+      );
+    }
+    return index;
+  }
+
+  throw new Error(
+    `Unknown ${flagName} "${trimmed}". Available actions: ${actions.map(action => `"${action.name}"`).join(', ')}.`
+  );
+}
+
+export function isBulkQueryUnsupported(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /selecting compound data not supported in bulk query/i.test(message);
 }

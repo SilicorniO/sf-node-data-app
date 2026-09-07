@@ -2,8 +2,6 @@ appConfiguration:
   processingType: "api"
   bulkApiMaxWaitSec: 300
   bulkApiPollIntervalSec: 5
-  stopOnError: true
-  rollbackOnError: true
   apiVersion: "63.0"
 
 # The AccountId column in contacts.csv holds the Account Name (human-readable).
@@ -17,29 +15,29 @@ sheets:
         apiName: "AccountId"
 
 actions:
-  # Step 1: Export all Accounts from Salesforce to get their Ids
+  # Step 1: Get all Accounts from Salesforce to resolve AccountId values.
   - name: "Get Accounts"
+    type: "get"
     outputSheet: "Accounts"
-    exportAction:
-      uniqueField: "Name"
-      query: "SELECT Id, Name FROM Account"
+    query: "SELECT Id, Name FROM Account"
 
-  # Step 2: Resolve AccountId (currently holds the Account Name) to a real Salesforce Id,
-  # then insert the Contacts
-  - name: "Insert Contacts"
+  # Step 2: Produce a separate transformed CSV.
+  - name: "Resolve Contact Accounts"
+    type: "transform"
     inputSheet: "contacts"
-    transformAction:
-      fieldsConf:
-        - name: "AccountId"
-          transformation: "'${Accounts.Name.Id}'"
-    importAction:
-      objectName: "Contact"
-      action: "insert"
-      uniqueField: "Email"
-      importFields:
-        - "FirstName"
-        - "LastName"
-        - "Email"
-        - "Phone"
-        - "Title"
-        - "AccountId"
+    outputSheet: "contacts-ready"
+    script: "./resolve-account-id.js"
+
+  # Step 3: Insert the transformed rows.
+  - name: "Insert Contacts"
+    type: "insert"
+    object: "Contact"
+    inputSheet: "contacts-ready"
+    outputSheet: "Inserted Contact IDs"
+    fields:
+      - "FirstName"
+      - "LastName"
+      - "Email"
+      - "Phone"
+      - "Title"
+      - "AccountId"

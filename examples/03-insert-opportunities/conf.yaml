@@ -2,8 +2,6 @@ appConfiguration:
   processingType: "bulk"
   bulkApiMaxWaitSec: 300
   bulkApiPollIntervalSec: 5
-  stopOnError: true
-  rollbackOnError: true
   apiVersion: "63.0"
 
 # The Opportunities sheet in the Excel file has an "AccountId" column that holds
@@ -16,37 +14,35 @@ sheets:
         apiName: "AccountId"
 
 actions:
-  # Step 1: Export all Accounts from Salesforce to get their Ids
+  # Step 1: Get all Accounts from Salesforce to resolve AccountId values.
   - name: "Get Accounts"
+    type: "get"
     outputSheet: "Accounts"
-    exportAction:
-      uniqueField: "Name"
-      query: "SELECT Id, Name FROM Account"
+    query: "SELECT Id, Name FROM Account"
 
-  # Step 2: Check which Opportunities already exist in Salesforce (idempotency)
+  # Step 2: Get existing Opportunities into a separate lookup sheet.
   - name: "Get Existing Opportunities"
-    inputSheet: "Opportunities"
-    exportAction:
-      uniqueField: "Name"
-      query: "SELECT Id, Name FROM Opportunity"
+    type: "get"
+    outputSheet: "Existing Opportunities"
+    query: "SELECT Id, Name FROM Opportunity"
 
-  # Step 3: Resolve AccountId (currently holds Account Name) to a real Salesforce Id.
-  # Rows that already have a Salesforce Id (from Step 2) are automatically skipped
-  # by the insert action, making this pipeline safe to re-run.
-  - name: "Insert Opportunities"
+  # Step 3: Remove existing records and resolve AccountId values.
+  - name: "Prepare New Opportunities"
+    type: "transform"
     inputSheet: "Opportunities"
-    transformAction:
-      fieldsConf:
-        - name: "AccountId"
-          transformation: "'${Accounts.Name.Id}'"
-    importAction:
-      objectName: "Opportunity"
-      action: "insert"
-      uniqueField: "Name"
-      importFields:
-        - "Name"
-        - "AccountId"
-        - "StageName"
-        - "CloseDate"
-        - "Amount"
-        - "Description"
+    outputSheet: "Opportunities To Insert"
+    script: "./prepare-opportunities.js"
+
+  # Step 4: Insert only the transformed new rows.
+  - name: "Insert Opportunities"
+    type: "insert"
+    object: "Opportunity"
+    inputSheet: "Opportunities To Insert"
+    outputSheet: "Inserted Opportunity IDs"
+    fields:
+      - "Name"
+      - "AccountId"
+      - "StageName"
+      - "CloseDate"
+      - "Amount"
+      - "Description"

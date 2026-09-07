@@ -2,22 +2,20 @@ appConfiguration:
   processingType: "bulk"
   bulkApiMaxWaitSec: 300
   bulkApiPollIntervalSec: 5
-  stopOnError: true
-  rollbackOnError: false
   apiVersion: "63.0"
 
 actions:
   - name: "Accounts"
+    type: "get"
     outputSheet: "Accounts"
-    exportAction:
-      query: "SELECT Id, Name, BillingStreet, BillingCity, BillingState, BillingCountry, Phone, Industry, Website FROM Account ORDER BY Name"
+    query: "SELECT Id, Name, BillingStreet, BillingCity, BillingState, BillingCountry, Phone, Industry, Website FROM Account ORDER BY Name"
 
   - name: "Contacts"
+    type: "get"
     outputSheet: "Contacts"
-    exportAction:
-      query: "SELECT Id, FirstName, LastName, Email, Phone, Title, AccountId FROM Contact ORDER BY LastName, FirstName"
+    query: "SELECT Id, FirstName, LastName, Email, Phone, Title, AccountId FROM Contact ORDER BY LastName, FirstName"
 
   - name: "Opportunities"
+    type: "get"
     outputSheet: "Opportunities"
-    exportAction:
-      query: "SELECT Id, Name, AccountId, StageName, Amount, CloseDate, Description FROM Opportunity ORDER BY Name"
+    query: "SELECT Id, Name, AccountId, StageName, Amount, CloseDate, Description FROM Opportunity ORDER BY Name"

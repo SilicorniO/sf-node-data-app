@@ -1,170 +1,134 @@
-'use strict';
+import { dump, load } from 'js-yaml';
+import { validateConfiguration } from './validation.js';
 
-import { state, resetUid } from './state.js';
-import { toast } from './utils.js';
-import { syncSheets } from './sheets.js';
-import { addSheet, renderSheets } from './sheets.js';
-import { addAction, renderActions } from './actions.js';
-import { bus } from './state.js';
-
-function buildYamlObj() {
-  syncSheets();
-
-  const appConfig = {
-    processingType:        document.getElementById('cfg-processingType').value,
-    bulkApiMaxWaitSec:     parseFloat(document.getElementById('cfg-maxWait').value) || 300,
-    bulkApiPollIntervalSec: parseFloat(document.getElementById('cfg-pollInterval').value) || 5,
-    stopOnError:           document.getElementById('cfg-stopOnError').checked,
-    rollbackOnError:       document.getElementById('cfg-rollbackOnError').checked,
-    apiVersion:            document.getElementById('cfg-apiVersion').value || '63.0',
+export function buildConfiguration(state) {
+  const app = state.appConfiguration;
+  const appConfiguration = {
+    processingType: app.processingType || 'bulk',
+    apiVersion: (app.apiVersion || '58.0').trim(),
   };
+  const maxWait = optionalPositiveNumber(app.bulkApiMaxWaitSec);
+  const poll = optionalPositiveNumber(app.bulkApiPollIntervalSec);
+  const queryBatchSize = optionalPositiveNumber(app.queryApiBatchSize);
+  if (maxWait !== null) appConfiguration.bulkApiMaxWaitSec = maxWait;
+  if (poll !== null) appConfiguration.bulkApiPollIntervalSec = poll;
+  if (queryBatchSize !== null && queryBatchSize !== 2000) {
+    appConfiguration.queryApiBatchSize = queryBatchSize;
+  }
+  if (app.cleanOutputFolderBeforeExecution) appConfiguration.cleanOutputFolderBeforeExecution = true;
+  if (app.deleteErrorFilesBeforeExecution) appConfiguration.deleteErrorFilesBeforeExecution = true;
 
-  const sheets = state.sheets
-    .filter(s => s.name)
-    .map(s => ({
-      name:   s.name,
-      fields: s.fields.filter(f => f.name).map(f => ({ name: f.name, apiName: f.apiName || f.name })),
-    }))
-    .filter(s => s.fields.length);
-
-  const clean = obj => {
-    if (Array.isArray(obj)) return obj.map(clean);
-    if (obj && typeof obj === 'object') {
-      const r = {};
-      Object.entries(obj).forEach(([k, v]) => {
-        if (v === undefined || v === null) return;
-        if (Array.isArray(v) && !v.length) return;
-        r[k] = clean(v);
-      });
-      return r;
-    }
-    return obj;
-  };
-
-  const actions = state.actions.map(a => {
-    const obj = { name: a.name };
-    if (a.inputSheet)  obj.inputSheet  = a.inputSheet;
-    if (a.outputSheet) obj.outputSheet = a.outputSheet;
-    if (a.waitStartingTime > 0) obj.waitStartingTime = a.waitStartingTime;
-    if (a.copySheetAction) {
-      const csa = {};
-      if (a.copySheetAction.condition)   csa.condition   = a.copySheetAction.condition;
-      if (a.copySheetAction.uniqueField) csa.uniqueField = a.copySheetAction.uniqueField;
-      if (a.copySheetAction.copyFields?.length) csa.copyFields = a.copySheetAction.copyFields;
-      obj.copySheetAction = csa;
-    }
-    if (a.exportAction) {
-      const ea = { query: a.exportAction.query };
-      if (a.exportAction.uniqueField) ea.uniqueField = a.exportAction.uniqueField;
-      obj.exportAction = ea;
-    }
-    if (a.transformAction?.fieldsConf?.length) {
-      obj.transformAction = { fieldsConf: a.transformAction.fieldsConf };
-    }
-    if (a.importAction) {
-      const ia = { objectName: a.importAction.objectName, action: a.importAction.action };
-      if (a.importAction.uniqueField)   ia.uniqueField   = a.importAction.uniqueField;
-      if (a.importAction.importFields?.length) ia.importFields = a.importAction.importFields;
-      obj.importAction = ia;
-    }
-    return clean(obj);
+  const sheets = state.sheets.map(sheet => {
+    const result = { name: sheet.name.trim() };
+    const fields = sheet.fields
+      .filter(field => field.translate)
+      .map(field => ({ name: field.name.trim(), apiName: field.apiName.trim() }));
+    if (fields.length) result.fields = fields;
+    return result;
   });
 
-  const result = { appConfiguration: appConfig };
-  if (sheets.length)  result.sheets  = sheets;
-  if (actions.length) result.actions = actions;
+  const actions = state.actions.map(buildActionConfiguration);
+  const configuration = { appConfiguration };
+  if (sheets.length) configuration.sheets = sheets;
+  if (actions.length) configuration.actions = actions;
+  return configuration;
+}
+
+export function generateYaml(state) {
+  const configuration = buildConfiguration(state);
+  const validation = validateConfiguration(configuration);
+  if (!validation.valid) {
+    return { yaml: null, configuration, ...validation };
+  }
+  return {
+    yaml: dump(configuration, {
+      lineWidth: 120,
+      noRefs: true,
+      quotingType: '"',
+      forceQuotes: false,
+    }),
+    configuration,
+    ...validation,
+  };
+}
+
+export function parseYaml(text) {
+  const raw = load(text);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('The YAML root must be a configuration object.');
+  }
+  const validation = validateConfiguration(raw);
+  if (!validation.valid) {
+    const message = validation.issues
+      .map(issue => `${issue.pathText || 'configuration'}: ${issue.message}`)
+      .join('\n');
+    throw new Error(message);
+  }
+  return validation.data;
+}
+
+export function buildActionConfiguration(action) {
+  const result = {
+    type: action.type,
+    name: String(action.name || '').trim(),
+  };
+  if (Number(action.waitBeforeSeconds) > 0) {
+    result.waitBeforeSeconds = Number(action.waitBeforeSeconds);
+  }
+  if (action.continueOnError) result.continueOnError = true;
+  if (action.errorSheet?.trim()) result.errorSheet = action.errorSheet.trim();
+  if (action.errorRows === 'all') result.errorRows = 'all';
+
+  switch (action.type) {
+    case 'get':
+      result.outputSheet = value(action.outputSheet);
+      result.query = value(action.query);
+      break;
+    case 'transform':
+      result.inputSheet = value(action.inputSheet);
+      result.outputSheet = value(action.outputSheet);
+      result.script = value(action.script);
+      break;
+    case 'insert':
+      result.object = value(action.object);
+      result.inputSheet = value(action.inputSheet);
+      addFields(result, action.fields);
+      if (action.outputSheet?.trim()) result.outputSheet = action.outputSheet.trim();
+      break;
+    case 'update':
+      result.object = value(action.object);
+      result.inputSheet = value(action.inputSheet);
+      addFields(result, action.fields);
+      break;
+    case 'upsert':
+      result.object = value(action.object);
+      result.inputSheet = value(action.inputSheet);
+      result.externalIdField = value(action.externalIdField);
+      addFields(result, action.fields);
+      break;
+    case 'delete':
+      result.object = value(action.object);
+      result.inputSheet = value(action.inputSheet);
+      break;
+  }
   return result;
 }
 
-export function genYaml() {
-  try {
-    return jsyaml.dump(buildYamlObj(), { lineWidth: 120, noRefs: true, quotingType: "'" });
-  } catch (e) {
-    return `# Error: ${e.message}`;
-  }
+function cleanFields(fields = []) {
+  return fields.map(field => String(field).trim()).filter(Boolean);
 }
 
-export function refreshYaml() {
-  document.getElementById('yaml-preview').textContent = genYaml();
+function addFields(result, fields) {
+  const cleaned = cleanFields(fields);
+  if (cleaned.length) result.fields = cleaned;
 }
 
-export function refreshAndGoIO() {
-  refreshYaml();
-  bus.emit('tab-switch', 'io');
+function value(input) {
+  return String(input || '').trim();
 }
 
-export function downloadYaml() {
-  const y = genYaml();
-  const a = document.createElement('a');
-  a.href     = URL.createObjectURL(new Blob([y], { type: 'text/yaml' }));
-  a.download = 'conf.yaml';
-  a.click();
-  toast('YAML downloaded');
-}
-
-export function copyYaml() {
-  const y = genYaml();
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(y).then(() => toast('Copied to clipboard'));
-  } else {
-    const ta = document.createElement('textarea');
-    ta.value = y;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
-    toast('Copied to clipboard');
-  }
-}
-
-function loadConf(conf) {
-  state.sheets  = [];
-  state.actions = [];
-  resetUid(1);
-
-  const c = conf.appConfiguration || {};
-  document.getElementById('cfg-processingType').value  = c.processingType || 'bulk';
-  document.getElementById('cfg-maxWait').value          = c.bulkApiMaxWaitSec ?? 300;
-  document.getElementById('cfg-pollInterval').value     = c.bulkApiPollIntervalSec ?? 5;
-  document.getElementById('cfg-stopOnError').checked    = c.stopOnError !== undefined ? c.stopOnError : true;
-  document.getElementById('cfg-rollbackOnError').checked = c.rollbackOnError || false;
-  document.getElementById('cfg-apiVersion').value       = c.apiVersion || '63.0';
-
-  (conf.sheets || []).forEach(s => addSheet(s));
-  (conf.actions || conf.objectsConf || []).forEach(a => addAction(a));
-
-  renderSheets();
-  renderActions();
-}
-
-export function parseAndLoad(text) {
-  try {
-    const conf = jsyaml.load(text);
-    if (!conf || typeof conf !== 'object') throw new Error('Invalid YAML — not an object');
-    loadConf(conf);
-    toast('Configuration loaded successfully');
-    bus.emit('tab-switch', 'config');
-  } catch (e) {
-    toast(`Parse error: ${e.message}`, 'error');
-  }
-}
-
-export function importFile(file) {
-  if (!file) return;
-  const r = new FileReader();
-  r.onload  = e => parseAndLoad(e.target.result);
-  r.onerror = () => toast('Error reading file', 'error');
-  r.readAsText(file);
-  document.getElementById('yaml-file-input').value = '';
-}
-
-export function handleDrop(e) {
-  const file = e.dataTransfer?.files?.[0];
-  if (file) importFile(file);
-}
-
-export function importText() {
-  const t = document.getElementById('yaml-text-input').value.trim();
-  if (!t) { toast('No YAML text provided', 'warning'); return; }
-  parseAndLoad(t);
+function optionalPositiveNumber(input) {
+  if (input === '' || input === null || input === undefined) return null;
+  const number = Number(input);
+  return Number.isFinite(number) ? number : input;
 }

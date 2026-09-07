@@ -1,8 +1,15 @@
-import { TransformFieldConf } from "./TransformFieldConf";
+import { Action, ActionOptions } from './Action';
 
-export class TransformAction {
-  fieldsConf: TransformFieldConf[];
-  constructor(fieldsConf: TransformFieldConf[]) {
-    this.fieldsConf = fieldsConf;
+export class TransformAction extends Action {
+  readonly type = 'transform' as const;
+
+  constructor(
+    name: string,
+    readonly inputSheet: string,
+    readonly outputSheet: string,
+    readonly script: string,
+    options: ActionOptions = {}
+  ) {
+    super(name, options);
   }
 }
