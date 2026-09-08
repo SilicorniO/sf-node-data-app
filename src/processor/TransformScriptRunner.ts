@@ -80,7 +80,13 @@ export class TransformScriptRunner {
     return { outputRows, errorRows, allRowsForErrors };
   }
 
-  static rowsToDataSheet(name: string, rows: TransformRow[]): DataSheet {
+  /**
+   * Builds a sheet from transform rows. Column headers are the union of the rows'
+   * keys, in first-seen order. When there are no rows, `fallbackFieldNames` (e.g. the
+   * transform's input headers) are used so the output sheet still carries a schema —
+   * downstream scripts and CSVs then see the columns even with zero rows.
+   */
+  static rowsToDataSheet(name: string, rows: TransformRow[], fallbackFieldNames: string[] = []): DataSheet {
     const fieldNames: string[] = [];
     const seen = new Set<string>();
     for (const row of rows) {
@@ -90,6 +96,9 @@ export class TransformScriptRunner {
           fieldNames.push(field);
         }
       }
+    }
+    if (fieldNames.length === 0) {
+      fieldNames.push(...fallbackFieldNames);
     }
     return {
       name,

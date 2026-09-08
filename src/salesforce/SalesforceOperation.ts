@@ -4,7 +4,11 @@ export type WriteOperation = 'insert' | 'update' | 'upsert' | 'delete';
 
 export interface PreparedWriteRow {
   inputIndex: number;
-  values: Record<string, string>;
+  // Empty CSV cells are stored as null so the JSON REST API omits them or sends
+  // an explicit null, instead of sending "" which Salesforce rejects for typed
+  // fields such as date/datetime ("Cannot deserialize instance of date from
+  // VALUE_STRING value"). The CSV-based Bulk path coerces null back to "".
+  values: Record<string, string | null>;
 }
 
 export interface SalesforceWriteRequest {

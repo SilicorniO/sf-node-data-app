@@ -227,7 +227,7 @@ export class SalesforceBulkApiLoader implements SalesforceDataLoader {
     });
   }
 
-  private fingerprint(fields: string[], values: Record<string, string>): string {
+  private fingerprint(fields: string[], values: Record<string, string | null>): string {
     return JSON.stringify(fields.map(field => values[field] ?? ''));
   }
 

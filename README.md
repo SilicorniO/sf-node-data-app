@@ -35,7 +35,7 @@ HTML file with no CDN or sibling assets. The generator provides:
 - CSV/Excel header discovery with opt-in field translations
 - sheet-aware action pickers and write-field suggestions
 - an offline, syntax-highlighted CommonJS transform editor with load, template,
-  direct-save, and download support
+direct-save, and download support
 - live required-field and canonical Zod validation
 - ordered action cards with drag-and-drop reordering
 - concise live YAML preview, copy, and save-to-file with download fallback
@@ -117,7 +117,7 @@ Execution is reported as six explicit phases:
 3. Index the input CSV files and Excel worksheets (sheets load on first use).
 4. Prepare field mappings and authentication.
 5. Precheck and execute the selected action range sequentially in YAML order,
-   writing each produced sheet as CSV as soon as it is ready.
+  writing each produced sheet as CSV as soon as it is ready.
 6. Flush any sheets still resident in memory as CSV.
 
 If an action fails at runtime, sheets already produced were written as they
@@ -152,6 +152,8 @@ export SF_CLIENT_ID="..."
 export SF_CLIENT_SECRET="..."
 export SF_INSTANCE_URL="https://your-domain.my.salesforce.com"
 ```
+
+
 
 ## Configuration
 
@@ -194,20 +196,20 @@ are invalid.
 ### Application settings
 
 - `processingType`: `api` for synchronous Query API and sObject Collections
-  (default), or `bulk` for Bulk API v2. Authentication is selected separately:
-  environment credentials take precedence, with Salesforce CLI as fallback.
+(default), or `bulk` for Bulk API v2. Authentication is selected separately:
+environment credentials take precedence, with Salesforce CLI as fallback.
 - `bulkApiMaxWaitSec`: optional Bulk job timeout; default is 300 at runtime
 - `bulkApiPollIntervalSec`: optional Bulk polling interval; default is 5
 - `apiVersion`: Salesforce API version; defaults to `58.0`
 - `queryApiBatchSize`: REST Query API page size (200–2000, default `2000`).
-  Synchronous GET actions use this setting, but Salesforce can still reduce
-  pages (for example to 250 rows). Bulk GET downloads CSV pages of up to 50,000
-  rows; if compound fields are rejected, it falls back to synchronous GET.
+Synchronous GET actions use this setting, but Salesforce can still reduce
+pages (for example to 250 rows). Bulk GET downloads CSV pages of up to 50,000
+rows; if compound fields are rejected, it falls back to synchronous GET.
 - `cleanOutputFolderBeforeExecution`: recursively delete existing output-folder
-  contents before loading inputs; defaults to `false`
+contents before loading inputs; defaults to `false`
 - `deleteErrorFilesBeforeExecution`: delete existing `*-errors.csv` files and
-  configured custom error-sheet CSVs; defaults to `false` and is redundant when
-  full cleanup is enabled
+configured custom error-sheet CSVs; defaults to `false` and is redundant when
+full cleanup is enabled
 
 For safety, full cleanup refuses the filesystem root, home directory, current
 working directory, any parent of the current working directory, or a folder
@@ -247,6 +249,8 @@ stop the pipeline and create one error row. Row errors finish the current action
 produce a warning but exit with status 0.
 
 ## Action reference
+
+
 
 ### GET
 
@@ -394,4 +398,4 @@ If a runtime action fails, sheets produced so far are still written, then the CL
 exits non-zero. YAML validation and transform preflight failures exit non-zero
 without writing CSV files.
 
-See [`examples/`](examples/) for runnable configurations.
+See `[examples/](examples/)` for runnable configurations.

@@ -71,6 +71,19 @@ describe('ActionProcessor write preparation', () => {
     expect(prepared.request.fields).toEqual(['Id', 'Name', 'Type']);
   });
 
+  it('treats an empty input sheet as a no-op instead of failing INSERT', async () => {
+    const action = new InsertAction('Insert Accounts', 'Account', 'Accounts To Import', [], 'Accounts Imported');
+    const sheets = new SheetRegistry({
+      'Accounts To Import': { name: 'Accounts To Import', fieldNames: [], data: [] },
+    });
+    const execConf = new ExecConf(new AppConfiguration('api', null, null, '58.0'), [action], []);
+
+    const hadRowErrors = await (ActionProcessor as any).executeWrite(execConf, action, sheets);
+
+    expect(hadRowErrors).toBe(false);
+    expect(sheets.get('Accounts Imported')?.data).toEqual([]);
+  });
+
   it('uses every input field for UPSERT when fields are omitted', () => {
     const action = new UpsertAction(
       'Upsert Accounts',
@@ -253,6 +266,25 @@ describe('ActionProcessor action range execution', () => {
     expect(streamed).toContain('three');
     // Every sheet was released once its last consumer ran; nothing lingers in memory.
     expect(registry.loadedNames()).toEqual([]);
+  });
+
+  it('keeps input headers on a transform output that emits no rows', async () => {
+    const dropScript = path.join(tempDir, 'drop.js');
+    fs.writeFileSync(dropScript, 'module.exports = { "Drop": function () { return null; } };');
+    const config = new ExecConf(
+      new AppConfiguration('api', null, null, '58.0'),
+      [new TransformAction('Drop', 'input', 'out', dropScript)],
+      []
+    );
+    const sheets = new SheetRegistry({
+      input: { name: 'input', fieldNames: ['Id', 'Name', 'Type'], data: [['001', 'Acme', 'Customer']] },
+    });
+
+    await ActionProcessor.processActions(config, sheets);
+
+    const out = sheets.get('out');
+    expect(out?.data).toEqual([]);
+    expect(out?.fieldNames).toEqual(['Id', 'Name', 'Type']);
   });
 
   it('reloads a released file-backed sheet when a later transform looks it up', async () => {

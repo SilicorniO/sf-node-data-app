@@ -320,7 +320,12 @@ export class ActionProcessor {
   ): boolean {
     const input = sheets.require(action.inputSheet);
     const result = runner.run(action, input, sheets);
-    sheets.set(action.outputSheet, TransformScriptRunner.rowsToDataSheet(action.outputSheet, result.outputRows));
+    // Fall back to the input headers when the transform emits no rows, so the output
+    // sheet still exposes a schema for downstream scripts and CSV output.
+    sheets.set(
+      action.outputSheet,
+      TransformScriptRunner.rowsToDataSheet(action.outputSheet, result.outputRows, input.fieldNames)
+    );
     console.log(
       `        Rows: ${input.data.length} input, ${result.outputRows.length} output, `
       + `${result.errorRows.length} error(s).`
@@ -418,6 +423,16 @@ export class ActionProcessor {
     sheets: SheetRegistry
   ): Promise<boolean> {
     const input = sheets.require(action.inputSheet);
+    // An empty input sheet is a no-op, not an error: there is nothing to submit,
+    // so downstream write actions should simply skip (0 rows, 0 errors) and let
+    // the pipeline continue.
+    if (input.data.length === 0) {
+      console.log(`        Rows: 0 input, 0 submitted, 0 error(s).`);
+      if (action.type === 'insert') {
+        this.writeInsertOutput(action as InsertAction, sheets, []);
+      }
+      return false;
+    }
     const request = this.prepareWriteRequest(action, input);
     const localErrors = request.localErrors;
     let apiResults: WriteRowResult[] = [];
@@ -492,7 +507,12 @@ export class ActionProcessor {
       }
       rows.push({
         inputIndex,
-        values: Object.fromEntries(fields.map(field => [field, values[fieldIndexes.get(field)!] ?? ''])),
+        values: Object.fromEntries(fields.map(field => {
+          const value = values[fieldIndexes.get(field)!] ?? '';
+          // Send null (not "") for empty cells so the JSON REST API accepts typed
+          // fields such as date/datetime; the CSV Bulk path coerces null back to "".
+          return [field, value === '' ? null : value];
+        })),
       });
     });
 
