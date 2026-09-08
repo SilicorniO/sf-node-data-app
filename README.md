@@ -157,6 +157,8 @@ appConfiguration:
   bulkApiPollIntervalSec: 5
   apiVersion: "63.0"
 
+scriptFile: ./scripts.js
+
 sheets:
   - name: contacts
     fields:
@@ -173,7 +175,6 @@ actions:
     name: Resolve Contact Accounts
     inputSheet: contacts
     outputSheet: contacts-ready
-    script: ./resolve-account-id.js
 
   - type: insert
     name: Insert Contacts
@@ -334,29 +335,34 @@ blank ID are errors.
   name: Resolve Account IDs
   inputSheet: contacts
   outputSheet: contacts-ready
-  script: ./resolve-account-id.js
 ```
 
-`script` is a trusted CommonJS module path relative to the YAML file:
+Every transform function lives in one shared CommonJS module named by the top-level
+`scriptFile` (a trusted path relative to the YAML). The module exports an object keyed
+by each transform action's `name`:
 
 ```js
-module.exports = function transform(row, { lookup, lookupAll }) {
-  const account = lookup('Accounts', 'Name', row.AccountId);
-  if (!account) throw new Error(`Unknown account: ${row.AccountId}`);
-  row.AccountId = account.Id;
-  delete row.LegacyColumn;
-  return row;
+// scripts.js
+module.exports = {
+  'Resolve Account IDs': function (row, { lookup, lookupAll }) {
+    const account = lookup('Accounts', 'Name', row.AccountId);
+    if (!account) throw new Error(`Unknown account: ${row.AccountId}`);
+    row.AccountId = account.Id;
+    delete row.LegacyColumn;
+    return row;
+  },
 };
 ```
 
-In the HTML generator, a transform action can reference a path directly or load
-an existing `.js`/`.cjs` file into the syntax-highlighted editor. **New template**
-creates the required CommonJS function and documents fields from the selected
-input sheet. **Save script** writes to a selected local file when the browser
-supports the File System Access API; other browsers download the script instead.
-The edited source is kept in the local browser draft but is deliberately not
-embedded in YAML, so save the script at the configured relative path before
-running the pipeline.
+The shared file is loaded once and may `require()` sibling modules to share logic.
+
+In the HTML generator, each transform action edits its own function in a
+syntax-highlighted editor; **Reset to template** replaces it with the required
+CommonJS function documenting fields from the selected input sheet. **Download**
+writes both `conf.yaml` and the shared script file. Re-importing is a single step:
+choose the `conf.yaml` and its shared script together and every transform's code is
+preloaded automatically — matched to each action by name. The edited source is kept
+in the local browser draft and is deliberately not embedded in YAML.
 
 The script receives a mutable dictionary whose keys are mapped/API field names.
 It can add, change, or delete fields. Return the full row (the same object or a
@@ -366,8 +372,9 @@ strings, and output columns are the union of returned keys in first-seen order.
 `lookup(sheetName, matchField, value)` returns the first exact string match or
 `undefined`. `lookupAll` returns every exact match. Lookup rows are copies.
 
-All transform modules are loaded before the first action. A missing/invalid module
-is a configuration preflight failure: no actions or output generation occur.
+The shared script file is loaded before the first action. A missing file, a missing
+key for a transform action, or a non-function value is a configuration preflight
+failure: no actions or output generation occur.
 Exceptions thrown per row are caught and written to the action error sheet using
 the partially transformed row. The destination is replaced only after processing
 completes.

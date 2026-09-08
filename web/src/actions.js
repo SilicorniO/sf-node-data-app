@@ -33,7 +33,6 @@ export function createAction(type = 'get', source = {}) {
     Object.assign(action, {
       inputSheet: source.inputSheet || '',
       outputSheet: source.outputSheet || '',
-      script: source.script || '',
       scriptContent: source.scriptContent || '',
     });
   } else {
@@ -62,7 +61,6 @@ export function changeActionType(action, type) {
     fields: action.fields,
     externalIdField: action.externalIdField,
     query: action.query,
-    script: action.script,
     scriptContent: action.scriptContent,
     primarySheet: action.primarySheet,
     secondarySheet: action.secondarySheet,

@@ -155,9 +155,9 @@ describe('ActionProcessor action range execution', () => {
     firstScript = path.join(tempDir, 'first.js');
     secondScript = path.join(tempDir, 'second.js');
     thirdScript = path.join(tempDir, 'third.js');
-    fs.writeFileSync(firstScript, 'module.exports = function (row) { row.step = "first"; return row; };');
-    fs.writeFileSync(secondScript, 'module.exports = function (row) { row.step = "second"; return row; };');
-    fs.writeFileSync(thirdScript, 'module.exports = function (row) { row.step = "third"; return row; };');
+    fs.writeFileSync(firstScript, 'module.exports = { "First": function (row) { row.step = "first"; return row; } };');
+    fs.writeFileSync(secondScript, 'module.exports = { "Second": function (row) { row.step = "second"; return row; } };');
+    fs.writeFileSync(thirdScript, 'module.exports = { "Third": function (row) { row.step = "third"; return row; } };');
   });
 
   afterAll(() => {
@@ -268,9 +268,9 @@ describe('ActionProcessor action range execution', () => {
     const script = path.join(tempDir, 'lookup.js');
     fs.writeFileSync(
       script,
-      'module.exports = function (row, { lookup }) {'
+      'module.exports = { "Resolve": function (row, { lookup }) {'
       + ' const r = lookup("ref", "Key", row.Key);'
-      + ' return { Key: row.Key, Value: r ? r.Value : "" }; };'
+      + ' return { Key: row.Key, Value: r ? r.Value : "" }; } };'
     );
     const config = new ExecConf(
       new AppConfiguration('api', null, null, '58.0'),

@@ -2,7 +2,7 @@ import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { ACTION_TYPES, actionDescription, createAction, sheetCatalog } from '../actions.js';
 import { notify, replaceState, resetState, restoreDraft, state, subscribe, uid } from '../state.js';
-import { generateYaml, parseYaml } from '../yaml.js';
+import { buildSharedScript, generateYaml, parseSharedScript, parseYaml } from '../yaml.js';
 import { esc, toast } from '../utils.js';
 import './sf-action-modal.js';
 import './sf-diagram-panel.js';
@@ -69,7 +69,7 @@ class SfGeneratorApp extends HTMLElement {
       </main>
 
       <sf-action-modal></sf-action-modal>
-      <input type="file" id="yaml-file" accept=".yaml,.yml,text/yaml" hidden>
+      <input type="file" id="yaml-file" accept=".yaml,.yml,.js,.cjs,text/yaml,text/javascript" multiple hidden>
       <input type="file" id="input-files" accept=".csv,.xlsx,.xls,text/csv" multiple hidden>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>`;
     this.bind();
@@ -272,10 +272,10 @@ class SfGeneratorApp extends HTMLElement {
       </div>
       <details class="import-panel">
         <summary>Import existing YAML</summary>
-        <p>Canonical YAML is validated and normalized. Comments and formatting are not preserved.</p>
+        <p>Canonical YAML is validated and normalized. Comments and formatting are not preserved. Select the <code>conf.yaml</code> and its shared script file together to preload every transform.</p>
         <textarea id="yaml-import-text" rows="6" placeholder="Paste YAML here…"></textarea>
         <div class="import-actions">
-          <button class="button ghost" data-choose-file>Choose .yaml file</button>
+          <button class="button ghost" data-choose-file>Choose .yaml + script</button>
           <button class="button secondary" data-import-text>Load pasted YAML</button>
         </div>
       </details>
@@ -394,7 +394,10 @@ class SfGeneratorApp extends HTMLElement {
       if (confirm('Reset the entire configuration? This clears the autosaved draft.')) resetState();
     }));
     this.querySelectorAll('[data-choose-file]').forEach(button => button.addEventListener('click', () => this.querySelector('#yaml-file').click()));
-    this.querySelector('#yaml-file').addEventListener('change', event => this.importFile(event.target.files[0]));
+    this.querySelector('#yaml-file').addEventListener('change', event => {
+      this.importFiles(Array.from(event.target.files || []));
+      event.target.value = '';
+    });
     this.querySelectorAll('[data-import-text]').forEach(button => button.addEventListener('click', () => {
       const text = button.closest('.preview-card').querySelector('#yaml-import-text').value;
       this.importText(text);
@@ -487,17 +490,24 @@ class SfGeneratorApp extends HTMLElement {
   async downloadYaml() {
     const result = generateYaml(state);
     if (!result.valid) return;
+    await this.saveFile(result.yaml, 'conf.yaml', 'text/yaml', 'YAML configuration', ['.yaml', '.yml']);
+
+    // Transform scripts travel in a single shared file so importing preloads them all.
+    if (result.configuration.scriptFile) {
+      const scriptName = result.configuration.scriptFile.split(/[\\/]/).pop() || 'scripts.js';
+      await this.saveFile(buildSharedScript(state), scriptName, 'text/javascript', 'CommonJS JavaScript', ['.js', '.cjs']);
+    }
+  }
+
+  async saveFile(content, suggestedName, mime, description, extensions) {
     if (window.showSaveFilePicker) {
       try {
         const handle = await window.showSaveFilePicker({
-          suggestedName: 'conf.yaml',
-          types: [{
-            description: 'YAML configuration',
-            accept: { 'text/yaml': ['.yaml', '.yml'] },
-          }],
+          suggestedName,
+          types: [{ description, accept: { [mime]: extensions } }],
         });
         const writable = await handle.createWritable();
-        await writable.write(result.yaml);
+        await writable.write(content);
         await writable.close();
         toast(`Saved ${handle.name}`);
         return;
@@ -506,11 +516,11 @@ class SfGeneratorApp extends HTMLElement {
       }
     }
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([result.yaml], { type: 'text/yaml' }));
-    link.download = 'conf.yaml';
+    link.href = URL.createObjectURL(new Blob([content], { type: mime }));
+    link.download = suggestedName;
     link.click();
     URL.revokeObjectURL(link.href);
-    toast('conf.yaml downloaded');
+    toast(`${suggestedName} downloaded`);
   }
 
   async loadInputFiles(files) {
@@ -586,15 +596,25 @@ class SfGeneratorApp extends HTMLElement {
       });
   }
 
-  importFile(file) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => this.importText(String(reader.result));
-    reader.onerror = () => toast('Could not read that file', 'error');
-    reader.readAsText(file);
+  async importFiles(files) {
+    if (!files.length) return;
+    const isYaml = file => /\.ya?ml$/i.test(file.name);
+    const yamlFile = files.find(isYaml);
+    const scriptFile = files.find(file => !isYaml(file));
+    if (!yamlFile) {
+      toast('Choose a .yaml file to import', 'warning');
+      return;
+    }
+    try {
+      const yamlText = await yamlFile.text();
+      const scriptText = scriptFile ? await scriptFile.text() : '';
+      this.importText(yamlText, scriptText);
+    } catch (error) {
+      toast(`Could not read that file: ${error.message}`, 'error', 6000);
+    }
   }
 
-  importText(text) {
+  importText(text, scriptText = '') {
     if (!text.trim()) {
       toast('Paste YAML or choose a file first', 'warning');
       return;
@@ -602,10 +622,37 @@ class SfGeneratorApp extends HTMLElement {
     try {
       const configuration = parseYaml(text);
       replaceState(configuration, 'import');
+      this.applySharedScript(scriptText);
       toast('Configuration imported and normalized');
     } catch (error) {
       toast(`Import failed: ${error.message}`, 'error', 6000);
     }
+  }
+
+  // Distributes the shared script file's contents into each transform action's editor,
+  // matching by action name. Missing entries fall back to the default template with a warning.
+  applySharedScript(scriptText) {
+    const transforms = state.actions.filter(action => action.type === 'transform');
+    if (!transforms.length) return;
+    const names = transforms.map(action => action.name);
+    const scripts = scriptText.trim() ? parseSharedScript(scriptText, names) : null;
+    if (scriptText.trim() && !scripts) {
+      toast('Could not match any function in the script file to an action; open each transform to restore its code.', 'warning', 6000);
+    }
+    const missing = [];
+    for (const action of transforms) {
+      const content = scripts ? scripts[action.name] : undefined;
+      if (content) {
+        action.scriptContent = content;
+      } else {
+        action.scriptContent = '';
+        missing.push(action.name);
+      }
+    }
+    if (scripts && missing.length) {
+      toast(`No script found for: ${missing.join(', ')}. Opening them shows a fresh template.`, 'warning', 6000);
+    }
+    notify('structure');
   }
 }
 

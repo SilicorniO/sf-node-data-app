@@ -15,7 +15,6 @@ class SfActionModal extends HTMLElement {
     this.otherActions = [];
     this.errors = {};
     this.scriptEditor = null;
-    this.scriptFileHandle = null;
   }
 
   open(action, index, sheetCatalog, otherActions, focusField = 'name') {
@@ -25,9 +24,7 @@ class SfActionModal extends HTMLElement {
     this.suggestions = sheetCatalog.map(sheet => sheet.name);
     this.otherActions = otherActions;
     this.errors = {};
-    this.scriptFileHandle = null;
-    if (this.draft.type === 'transform' && !this.draft.script && !this.draft.scriptContent) {
-      this.draft.script = './transform.js';
+    if (this.draft.type === 'transform' && !this.draft.scriptContent) {
       this.draft.scriptContent = this.transformTemplate();
     }
     this.render();
@@ -118,24 +115,13 @@ class SfActionModal extends HTMLElement {
       return `<div class="form-grid two">
         ${this.field('inputSheet', 'Input sheet', action.inputSheet, { required: true, list: true })}
         ${this.field('outputSheet', 'Output sheet', action.outputSheet, { required: true, list: true })}
-        <div class="field wide">
-          <span>CommonJS script <b>*</b></span>
-          <div class="script-path-row">
-            <input data-field="script" value="${esc(action.script)}" required placeholder="./transforms/accounts.js">
-            <button type="button" class="button secondary" data-load-script>Load .js</button>
-            <button type="button" class="button secondary" data-new-script>New template</button>
-          </div>
-          ${this.errorFor('script')}
-          <small class="hint">The path is relative to the YAML file. Loaded code and drafts stay local to this browser.</small>
-        </div>
         <div class="field wide script-editor-field">
           <span class="field-title-row">
             JavaScript editor
-            <button type="button" class="button secondary compact-button" data-save-script>Save script</button>
+            <button type="button" class="button secondary compact-button" data-new-script>Reset to template</button>
           </span>
           <div class="script-editor" data-script-editor></div>
-          <input type="file" data-script-file accept=".js,.cjs,text/javascript" hidden>
-          <small class="hint">Export <code>module.exports = function (row, { lookup, lookupAll }) { ... }</code>. Saving writes directly when the browser permits it; otherwise it downloads the file.</small>
+          <small class="hint">Export <code>module.exports = function (row, { lookup, lookupAll }) { ... }</code>. Every transform is saved together in the shared script file — download it next to the YAML.</small>
         </div>
       </div>`;
     }
@@ -242,8 +228,7 @@ class SfActionModal extends HTMLElement {
     this.querySelector('[data-field="type"]').addEventListener('change', event => {
       this.sync();
       this.draft = changeActionType(this.draft, event.target.value);
-      if (this.draft.type === 'transform' && !this.draft.script && !this.draft.scriptContent) {
-        this.draft.script = './transform.js';
+      if (this.draft.type === 'transform' && !this.draft.scriptContent) {
         this.draft.scriptContent = this.transformTemplate();
       }
       this.errors = {};
@@ -280,20 +265,11 @@ class SfActionModal extends HTMLElement {
       delete this.errors.fields;
       this.render();
     });
-    this.querySelector('[data-load-script]')?.addEventListener('click', () => this.chooseScriptFile());
-    this.querySelector('[data-script-file]')?.addEventListener('change', event => {
-      const file = event.target.files?.[0];
-      if (file) this.loadScriptFile(file);
-      event.target.value = '';
-    });
     this.querySelector('[data-new-script]')?.addEventListener('click', () => {
       this.sync();
-      this.scriptFileHandle = null;
-      if (!this.draft.script.trim()) this.draft.script = './transform.js';
       this.draft.scriptContent = this.transformTemplate();
       this.render();
     });
-    this.querySelector('[data-save-script]')?.addEventListener('click', () => this.saveScriptFile());
     this.querySelectorAll('[data-remove-field]').forEach(button => button.addEventListener('click', () => {
       this.sync();
       this.draft.fields.splice(Number(button.dataset.removeField), 1);
@@ -377,16 +353,6 @@ class SfActionModal extends HTMLElement {
         basicSetup,
         javascript({ commonjs: true }),
         EditorView.lineWrapping,
-        EditorView.domEventHandlers({
-          keydown: event => {
-            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-              event.preventDefault();
-              this.saveScriptFile();
-              return true;
-            }
-            return false;
-          },
-        }),
         EditorView.updateListener.of(update => {
           if (update.docChanged) this.draft.scriptContent = update.state.doc.toString();
         }),
@@ -413,84 +379,6 @@ module.exports = function transform(row, { lookup, lookupAll }) {
   return row;
 };
 `;
-  }
-
-  async chooseScriptFile() {
-    if (window.showOpenFilePicker) {
-      try {
-        const [handle] = await window.showOpenFilePicker({
-          types: [{
-            description: 'CommonJS JavaScript',
-            accept: { 'text/javascript': ['.js', '.cjs'] },
-          }],
-          multiple: false,
-        });
-        if (!handle) return;
-        await this.loadScriptFile(await handle.getFile(), handle);
-        return;
-      } catch (error) {
-        if (error.name === 'AbortError') return;
-      }
-    }
-    this.querySelector('[data-script-file]')?.click();
-  }
-
-  async loadScriptFile(file, handle = null) {
-    try {
-      this.sync();
-      this.scriptFileHandle = handle;
-      this.draft.script = `./${file.name}`;
-      this.draft.scriptContent = await file.text();
-      this.render();
-      toast(`Loaded ${file.name}`);
-    } catch (error) {
-      toast(`Could not load script: ${error.message}`, 'error', 6000);
-    }
-  }
-
-  async saveScriptFile() {
-    this.sync();
-    const content = this.scriptEditor?.state.doc.toString() ?? this.draft.scriptContent ?? '';
-    if (!content.trim()) {
-      toast('Write or load JavaScript before saving.', 'error');
-      return;
-    }
-    this.draft.scriptContent = content;
-    const suggestedName = this.draft.script.split(/[\\/]/).pop() || 'transform.js';
-    try {
-      let handle = this.scriptFileHandle;
-      if (!handle && window.showSaveFilePicker) {
-        handle = await window.showSaveFilePicker({
-          suggestedName,
-          types: [{
-            description: 'CommonJS JavaScript',
-            accept: { 'text/javascript': ['.js', '.cjs'] },
-          }],
-        });
-      }
-      if (handle?.createWritable) {
-        const writable = await handle.createWritable();
-        await writable.write(content);
-        await writable.close();
-        this.scriptFileHandle = handle;
-        toast(`Saved ${handle.name}`);
-        return;
-      }
-      this.downloadScript(content, suggestedName);
-    } catch (error) {
-      if (error.name !== 'AbortError') {
-        this.downloadScript(content, suggestedName);
-      }
-    }
-  }
-
-  downloadScript(content, fileName) {
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([content], { type: 'text/javascript' }));
-    link.download = fileName;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    toast(`Downloaded ${fileName}`);
   }
 
   fieldsForSelectedSheet() {

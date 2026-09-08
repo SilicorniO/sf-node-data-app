@@ -23,24 +23,34 @@ export class TransformScriptRunner {
   private readonly functions = new Map<string, TransformFunction>();
 
   preflight(actions: TransformAction[]): void {
+    const modules = new Map<string, Record<string, unknown>>();
     for (const action of actions) {
-      try {
-        const loaded = require(action.script);
-        const transform = loaded?.default ?? loaded;
-        if (typeof transform !== 'function') {
-          throw new Error('module.exports must be a function');
+      let exported = modules.get(action.scriptFile);
+      if (!exported) {
+        try {
+          const loaded = require(action.scriptFile);
+          const resolved = loaded?.default ?? loaded;
+          if (!resolved || typeof resolved !== 'object') {
+            throw new Error('the module must export an object keyed by action name');
+          }
+          exported = resolved as Record<string, unknown>;
+          modules.set(action.scriptFile, exported);
+        } catch (error: any) {
+          throw new Error(`Unable to load transform script file "${action.scriptFile}" for action "${action.name}": ${error.message}`);
         }
-        this.functions.set(action.script, transform as TransformFunction);
-      } catch (error: any) {
-        throw new Error(`Unable to load transform script "${action.script}" for action "${action.name}": ${error.message}`);
       }
+      const transform = exported[action.name];
+      if (typeof transform !== 'function') {
+        throw new Error(`Transform script file "${action.scriptFile}" does not export a function for action "${action.name}".`);
+      }
+      this.functions.set(action.name, transform as TransformFunction);
     }
   }
 
   run(action: TransformAction, input: DataSheet, sheets: SheetRegistry): TransformResult {
-    const transform = this.functions.get(action.script);
+    const transform = this.functions.get(action.name);
     if (!transform) {
-      throw new Error(`Transform script "${action.script}" was not preflighted.`);
+      throw new Error(`Transform script for action "${action.name}" was not preflighted.`);
     }
 
     const context = this.createContext(sheets);

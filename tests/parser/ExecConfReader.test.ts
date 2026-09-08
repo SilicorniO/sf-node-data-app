@@ -10,6 +10,7 @@ import { UpdateAction } from '../../src/model/UpdateAction';
 import { UpsertAction } from '../../src/model/UpsertAction';
 
 const allActionsYaml = `
+scriptFile: ./scripts.js
 actions:
   - type: get
     name: Get Accounts
@@ -19,7 +20,6 @@ actions:
     name: Transform Accounts
     inputSheet: Accounts
     outputSheet: Accounts Ready
-    script: ./transform.js
   - type: insert
     name: Insert Accounts
     object: Account
@@ -60,8 +60,8 @@ describe('ExecConfReader', () => {
       errorRows: 'errors',
       errorSheet: 'Get Accounts-errors',
     });
-    expect((configuration.actions[1] as TransformAction).script).toBe(
-      path.resolve('/configuration', 'transform.js')
+    expect((configuration.actions[1] as TransformAction).scriptFile).toBe(
+      path.resolve('/configuration', 'scripts.js')
     );
   });
 
@@ -143,7 +143,8 @@ actions:
     ['upsert without external field', `actions:\n  - { type: upsert, name: Upsert, object: Account, inputSheet: A, externalIdField: Key__c, fields: [Name] }`],
     ['delete with fields', `actions:\n  - { type: delete, name: Delete, object: Account, inputSheet: A, fields: [Id] }`],
     ['update with output', `actions:\n  - { type: update, name: Update, object: Account, inputSheet: A, outputSheet: B, fields: [Id] }`],
-    ['error sheet collision', `actions:\n  - { type: transform, name: Transform, inputSheet: A, outputSheet: B, errorSheet: b, script: "./x.js" }`],
+    ['error sheet collision', `scriptFile: ./scripts.js\nactions:\n  - { type: transform, name: Transform, inputSheet: A, outputSheet: B, errorSheet: b }`],
+    ['transform without scriptFile', `actions:\n  - { type: transform, name: Transform, inputSheet: A, outputSheet: B }`],
   ])('rejects %s', (_description, yaml) => {
     expect(() => ExecConfReader.parseConf(yaml)).toThrow(/Error parsing configuration/);
   });

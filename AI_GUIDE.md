@@ -14,10 +14,12 @@ actions in memory; produced sheets are written as CSV to the output folder.
 
 ## 1. YAML config structure
 
-Root has exactly three keys (unknown keys are rejected):
+Root has these keys (unknown keys are rejected); only `appConfiguration` and `actions`
+carry required content, `scriptFile` is required only when a transform action exists:
 
 ```yaml
 appConfiguration: { ... }   # global settings
+scriptFile: "./scripts.js"  # required if any transform action exists; path relative to the YAML
 sheets: [ ... ]             # optional header -> Salesforce API-name mappings
 actions: [ ... ]            # ordered pipeline steps
 ```
@@ -74,12 +76,11 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
   outputSheet: "Accounts"       # required; replaces sheet if it exists
   query: "SELECT Id, Name FROM Account"   # required (SOQL)
 
-# TRANSFORM — run a JS script row-by-row
-- name: "Resolve Accounts"
+# TRANSFORM — run a JS function row-by-row (function comes from the shared scriptFile)
+- name: "Resolve Accounts"           # this name is the key into the shared script file
   type: "transform"
   inputSheet: "contacts"        # required
   outputSheet: "contacts-ready" # required
-  script: "./resolve-account-id.js"   # required; path relative to the YAML file
 
 # INSERT — create records
 - name: "Insert Contacts"
@@ -123,10 +124,32 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
 
 ## 2. Transform scripts
 
-- **Format:** CommonJS `.js`/`.cjs`. `module.exports` (or `.default`) **must be a function**.
-- **Location:** path is relative to the YAML file's directory (e.g. `./resolve-account-id.js`).
-  Scripts may `require()` sibling modules to share logic.
-- **All scripts are loaded/validated before any action runs** — a bad script fails preflight.
+- **One shared file** for the whole config, named by the top-level `scriptFile` (relative to
+  the YAML, e.g. `./scripts.js`). It is a CommonJS module that **exports an object keyed by
+  action name**: `module.exports = { "Resolve Accounts": function (row, ctx) { ... }, ... }`.
+- The key **must exactly match** the transform action's `name`. Action names are unique
+  (case-insensitive), so keys never collide.
+- The file may `require()` sibling modules and declare module-level `const`/helpers above
+  `module.exports` to share logic and data across functions.
+- **The file is loaded once and validated before any action runs** — a missing key or a
+  non-function value fails preflight.
+
+**You (the AI) may author or edit this file directly.** Write plain, human-readable code —
+you do **not** need any special comment markers. The only rules the tooling relies on:
+
+- Each transform's function is an object property whose **key is the quoted action name**
+  exactly as written in the YAML (single or double quotes), e.g. `'Resolve Accounts': function (row, ctx) { ... }`.
+- The value is a `function` expression (named or anonymous) or an arrow function.
+- Module-level `const`/`require` above the export are fine and run once when the file loads.
+
+The offline generator's importer parses this format by matching each YAML transform name to
+its object key, so a file you write by hand loads straight into the per-action editors. One
+caveat when a user then re-exports from the generator UI: each function is edited in isolation,
+so **module-level `const`s and `require`s at the top of the file are not carried back into the
+per-action editors** and would be dropped on a UI round-trip. If code must be shared across
+functions and the user edits in the UI, prefer a sibling module pulled in with `require()`
+inside each function (or inline the shared value in each function) rather than a top-level
+`const`. The CLI runs hand-written top-level declarations fine regardless.
 
 **Signature:** `(row, context) => row | null`
 
@@ -138,14 +161,16 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
 - `context.lookup(sheetName, matchField, value)` → first matching row or `undefined`.
 - `context.lookupAll(sheetName, matchField, value)` → array of matching rows.
 
-**Example** (`examples/02-insert-contacts/resolve-account-id.js`):
+**Example** (`examples/02-insert-contacts/scripts.js`):
 
 ```js
-module.exports = function resolveAccountId(row, { lookup }) {
-  const account = lookup('Accounts', 'Name', row.AccountId);
-  if (!account) throw new Error(`Account "${row.AccountId}" was not found.`);
-  row.AccountId = account.Id;   // replace name with real SF Id
-  return row;
+module.exports = {
+  'Resolve Contact Accounts': function (row, { lookup }) {
+    const account = lookup('Accounts', 'Name', row.AccountId);
+    if (!account) throw new Error(`Account "${row.AccountId}" was not found.`);
+    row.AccountId = account.Id;   // replace name with real SF Id
+    return row;
+  },
 };
 ```
 
@@ -167,8 +192,9 @@ Return `null` to filter (skip) a row; derive new columns by assigning `row.NewCo
 - `cleanOutputFolderBeforeExecution` refuses unsafe targets (root, home, cwd/parents, or any
   folder containing a selected input file).
 
-Convention: keep `conf.yaml`, input CSV/Excel, and transform `.js` together in one folder
-(see `examples/`), and point `--outputFolder` at a separate `output/` dir.
+Convention: keep `conf.yaml`, input CSV/Excel, and the shared transform script (the file
+named by `scriptFile`, e.g. `scripts.js`) together in one folder (see `examples/`), and
+point `--outputFolder` at a separate `output/` dir.
 
 ---
 
@@ -191,6 +217,14 @@ output) → flush remaining sheets. Exit code 1 on failure; accepted row-errors 
 
 There is also an **offline YAML generator UI**: `npm run build:web` →
 `dist-web/execconf_generator.html` (forms + validation, does not execute anything).
+Each transform action edits its function in an in-browser editor; **Download** writes
+both `conf.yaml` and the shared script file, and **importing** them together (select the
+`.yaml` and the shared `.js` at once) preloads every transform's code automatically,
+matched to each action by its quoted name key. A file written by hand or by an AI loads
+the same way — no special comment markers are needed. The generator rebuilds the shared
+file from the editors, so a hand-authored top-of-file `require('./helper')` or module-level
+`const` is not preserved across a UI round-trip — the CLI still runs such hand-written files
+fine.
 
 ---
 
@@ -225,13 +259,15 @@ Pure `transform`/`merge`-only pipelines need no Salesforce credentials.
 
 ## 7. Minimal complete example
 
-Folder `myjob/` with `conf.yaml`, `contacts.csv`, `resolve-account-id.js`:
+Folder `myjob/` with `conf.yaml`, `contacts.csv`, and `scripts.js` (exporting a
+`"Resolve Contact Accounts"` function):
 
 ```yaml
 # myjob/conf.yaml
 appConfiguration:
   processingType: "api"
   apiVersion: "63.0"
+scriptFile: "./scripts.js"
 sheets:
   - name: "contacts"
     fields:
@@ -246,7 +282,6 @@ actions:
     type: "transform"
     inputSheet: "contacts"
     outputSheet: "contacts-ready"
-    script: "./resolve-account-id.js"
   - name: "Insert Contacts"
     type: "insert"
     object: "Contact"
@@ -264,7 +299,7 @@ node dist/Index.js -c myjob/conf.yaml -v myjob/contacts.csv -o output
 - [ ] `--confFile` points to a valid YAML with `actions`.
 - [ ] Every `inputSheet` is either an input file's sheet or a prior action's `outputSheet`.
 - [ ] `fields` rules honored: insert excludes `Id`; update includes `Id`; upsert includes `externalIdField`.
-- [ ] Transform `script` paths are relative to the YAML and export a function.
+- [ ] If any transform exists, top-level `scriptFile` is set and the shared file exports a function keyed by each transform action's `name`.
 - [ ] Inputs supplied via `-v`/`-e`/`-i`; sheet names don't collide.
 - [ ] SF auth env vars set if any get/insert/update/upsert/delete action runs.
 - [ ] `--outputFolder` set (not a protected path if cleaning is enabled).

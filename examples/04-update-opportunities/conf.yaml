@@ -4,6 +4,8 @@ appConfiguration:
   bulkApiPollIntervalSec: 5
   apiVersion: "63.0"
 
+scriptFile: "./scripts.js"
+
 actions:
   - name: "Get Existing Opportunities"
     type: "get"
@@ -14,7 +16,6 @@ actions:
     type: "transform"
     inputSheet: "opportunities-update"
     outputSheet: "opportunities-ready"
-    script: "./resolve-opportunity-id.js"
 
   - name: "Update Opportunities"
     type: "update"

@@ -36,9 +36,12 @@ export class ExecConfReader {
     try {
       const rawConfiguration = yaml.load(yamlString);
       const configuration = execConfSchema.parse(rawConfiguration);
+      const scriptFilePath = configuration.scriptFile
+        ? path.resolve(baseDirectory, configuration.scriptFile)
+        : undefined;
       return new ExecConf(
         this.parseAppConfiguration(configuration),
-        configuration.actions.map(action => this.parseAction(action, baseDirectory)),
+        configuration.actions.map(action => this.parseAction(action, scriptFilePath)),
         configuration.sheets.map(sheet => new SheetConf(
           sheet.name,
           sheet.fields.map(field => new SheetField(field.name, field.apiName ?? field.name))
@@ -68,7 +71,7 @@ export class ExecConfReader {
     );
   }
 
-  private static parseAction(action: ParsedExecConf['actions'][number], baseDirectory: string): Action {
+  private static parseAction(action: ParsedExecConf['actions'][number], scriptFilePath?: string): Action {
     const options = {
       waitBeforeSeconds: action.waitBeforeSeconds,
       continueOnError: action.continueOnError,
@@ -97,11 +100,14 @@ export class ExecConfReader {
           options
         );
       case 'transform':
+        if (!scriptFilePath) {
+          throw new Error(`Transform action "${action.name}" requires a top-level scriptFile.`);
+        }
         return new TransformAction(
           action.name,
           action.inputSheet,
           action.outputSheet,
-          path.resolve(baseDirectory, action.script),
+          scriptFilePath,
           options
         );
     }

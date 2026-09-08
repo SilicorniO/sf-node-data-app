@@ -7,7 +7,7 @@ export class TransformAction extends Action {
     name: string,
     readonly inputSheet: string,
     readonly outputSheet: string,
-    readonly script: string,
+    readonly scriptFile: string,
     options: ActionOptions = {}
   ) {
     super(name, options);

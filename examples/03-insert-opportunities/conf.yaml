@@ -4,6 +4,8 @@ appConfiguration:
   bulkApiPollIntervalSec: 5
   apiVersion: "63.0"
 
+scriptFile: "./scripts.js"
+
 # The Opportunities sheet in the Excel file has an "AccountId" column that holds
 # the Account Name. The sheet mapping declares it so the field is treated as AccountId
 # by the rest of the pipeline.
@@ -31,7 +33,6 @@ actions:
     type: "transform"
     inputSheet: "Opportunities"
     outputSheet: "Opportunities To Insert"
-    script: "./prepare-opportunities.js"
 
   # Step 4: Insert only the transformed new rows.
   - name: "Insert Opportunities"

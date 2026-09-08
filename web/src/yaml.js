@@ -1,6 +1,8 @@
 import { dump, load } from 'js-yaml';
 import { validateConfiguration } from './validation.js';
 
+export const DEFAULT_SCRIPT_FILE = './scripts.js';
+
 export function buildConfiguration(state) {
   const app = state.appConfiguration;
   const appConfiguration = {
@@ -29,6 +31,9 @@ export function buildConfiguration(state) {
 
   const actions = state.actions.map(buildActionConfiguration);
   const configuration = { appConfiguration };
+  if (actions.some(action => action.type === 'transform')) {
+    configuration.scriptFile = value(state.scriptFile) || DEFAULT_SCRIPT_FILE;
+  }
   if (sheets.length) configuration.sheets = sheets;
   if (actions.length) configuration.actions = actions;
   return configuration;
@@ -87,7 +92,6 @@ export function buildActionConfiguration(action) {
     case 'transform':
       result.inputSheet = value(action.inputSheet);
       result.outputSheet = value(action.outputSheet);
-      result.script = value(action.script);
       break;
     case 'insert':
       result.object = value(action.object);
@@ -137,4 +141,185 @@ function optionalPositiveNumber(input) {
   if (input === '' || input === null || input === undefined) return null;
   const number = Number(input);
   return Number.isFinite(number) ? number : input;
+}
+
+const MARKER_START = '// >>> action: ';
+const MARKER_END = '// <<< action: ';
+
+function escapeMarker(name) {
+  return String(name).replace(/[\r\n]/g, ' ');
+}
+
+// Stitches every transform action's editor content into a single CommonJS module
+// keyed by action name. Sentinel comments let importSharedScript split it back apart.
+export function buildSharedScript(state) {
+  const transforms = state.actions.filter(action => action.type === 'transform');
+  if (!transforms.length) return '';
+  const entries = transforms.map(action => {
+    const name = escapeMarker(action.name || 'Unnamed action');
+    const body = wrapAsFunction(action.scriptContent || '', name);
+    return `  ${MARKER_START}${name}\n${indent(body)},\n  ${MARKER_END}${name}`;
+  });
+  return `module.exports = {\n${entries.join('\n\n')}\n};\n`;
+}
+
+// A transform editor holds a full `module.exports = function (...) { ... }` (optionally
+// preceded by a doc comment). Convert that to an anonymous function expression usable as
+// an object property value. If the content is not in the expected shape, fall back to a
+// no-op so the shared file stays syntactically valid.
+function wrapAsFunction(content, name) {
+  const key = JSON.stringify(name);
+  const fn = extractFunction(content);
+  return `${key}: ${fn}`;
+}
+
+// Pulls the `function ...` expression out of `module.exports = function ...;`, ignoring
+// any leading comments/whitespace and the trailing semicolon, and drops the function name.
+function extractFunction(content) {
+  const match = String(content).match(/module\.exports\s*=\s*(function\b[\s\S]*?)\s*;?\s*$/);
+  if (!match) return 'function (row) {\n  return row;\n}';
+  return match[1].replace(/^function\s+[A-Za-z0-9_$]+\s*\(/, 'function (').trim();
+}
+
+function indent(text) {
+  return text.split('\n').map(line => (line ? `    ${line}` : line)).join('\n');
+}
+
+// Splits a shared script file back into { [actionName]: scriptContent } so each function
+// round-trips into its per-action editor. Prefers the sentinel markers written by
+// buildSharedScript; when a hand-authored file has no markers, falls back to locating each
+// known action name as an object key and extracting its function by brace matching.
+// `knownNames` are the transform action names from the YAML (used by the fallback).
+// Returns null only when neither markers nor any known key can be found.
+export function parseSharedScript(text, knownNames = []) {
+  if (!text) return null;
+  if (text.includes(MARKER_START)) return parseWithMarkers(text);
+  return parseByKeys(text, knownNames);
+}
+
+function parseWithMarkers(text) {
+  const result = {};
+  const lines = text.split('\n');
+  let currentName = null;
+  let buffer = [];
+  for (const line of lines) {
+    const startIndex = line.indexOf(MARKER_START);
+    const endIndex = line.indexOf(MARKER_END);
+    if (startIndex !== -1) {
+      currentName = line.slice(startIndex + MARKER_START.length).trim();
+      buffer = [];
+      continue;
+    }
+    if (endIndex !== -1 && currentName !== null) {
+      result[currentName] = editorContentFromEntry(buffer.join('\n'));
+      currentName = null;
+      buffer = [];
+      continue;
+    }
+    if (currentName !== null) buffer.push(line);
+  }
+  return result;
+}
+
+// Locates each `'<name>': function ... { ... }` entry by its exact key and captures the
+// function expression by counting braces/parens while skipping strings and comments.
+function parseByKeys(text, knownNames) {
+  const result = {};
+  let found = false;
+  for (const name of knownNames) {
+    const fn = extractEntryByKey(text, name);
+    if (fn) {
+      result[name] = `module.exports = ${fn};\n`;
+      found = true;
+    }
+  }
+  return found ? result : null;
+}
+
+// Finds `"<name>"` or `'<name>'` used as an object key, then returns the source of the
+// function value that follows the colon, balanced across braces/parens.
+function extractEntryByKey(text, name) {
+  const quoted = ['"', "'"].map(q => `${q}${escapeForRegex(name)}${q}`).join('|');
+  const keyRegex = new RegExp(`(?:${quoted})\\s*:\\s*`, 'g');
+  const match = keyRegex.exec(text);
+  if (!match) return null;
+  return balancedExpression(text, keyRegex.lastIndex);
+}
+
+function escapeForRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Reads a balanced expression starting at `start`, honoring nested (), {}, [], string
+// literals (', ", `) and // and /* */ comments. Stops at the top-level comma/brace that
+// ends the object property value.
+function balancedExpression(text, start) {
+  let depth = 0;
+  let index = start;
+  const opens = { '(': ')', '{': '}', '[': ']' };
+  const closes = { ')': 1, '}': 1, ']': 1 };
+  for (; index < text.length; index++) {
+    const char = text[index];
+    if (char === '"' || char === "'" || char === '`') {
+      index = skipString(text, index, char);
+      continue;
+    }
+    if (char === '/' && text[index + 1] === '/') {
+      index = text.indexOf('\n', index);
+      if (index === -1) index = text.length;
+      continue;
+    }
+    if (char === '/' && text[index + 1] === '*') {
+      const end = text.indexOf('*/', index + 2);
+      index = end === -1 ? text.length : end + 1;
+      continue;
+    }
+    if (opens[char]) {
+      depth++;
+    } else if (closes[char]) {
+      if (depth === 0) break; // hit the object's own closing brace
+      depth--;
+    } else if (char === ',' && depth === 0) {
+      break; // end of this property value
+    }
+  }
+  return text.slice(start, index).trim() || null;
+}
+
+function skipString(text, start, quote) {
+  for (let index = start + 1; index < text.length; index++) {
+    const char = text[index];
+    if (char === '\\') {
+      index++;
+      continue;
+    }
+    if (char === quote) return index;
+    if (quote === '`' && char === '$' && text[index + 1] === '{') {
+      // Skip a template-literal ${...} expression, honoring nested braces.
+      let depth = 1;
+      index += 2;
+      for (; index < text.length && depth > 0; index++) {
+        if (text[index] === '{') depth++;
+        else if (text[index] === '}') depth--;
+      }
+      index--;
+    }
+  }
+  return text.length;
+}
+
+// Turns a captured `"Name": function (...) { ... }` entry back into the standalone
+// `module.exports = function ...` form the CodeMirror editor expects.
+function editorContentFromEntry(entry) {
+  const dedented = dedent(entry).trim().replace(/,\s*$/, '');
+  const match = dedented.match(/^(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')\s*:\s*([\s\S]*)$/);
+  const fn = match ? match[1].trim() : dedented;
+  return `module.exports = ${fn};\n`;
+}
+
+function dedent(text) {
+  const lines = text.split('\n');
+  const indents = lines.filter(line => line.trim()).map(line => line.match(/^ */)[0].length);
+  const min = indents.length ? Math.min(...indents) : 0;
+  return lines.map(line => line.slice(min)).join('\n');
 }

@@ -2,9 +2,10 @@ appConfiguration:
   processingType: "bulk"
   apiVersion: "63.0"
 
+scriptFile: "./scripts.js"
+
 actions:
   - name: "Transform Employees"
     type: "transform"
     inputSheet: "employees"
     outputSheet: "employees-transformed"
-    script: "./transform-employees.js"

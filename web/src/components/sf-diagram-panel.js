@@ -226,8 +226,8 @@ class SfDiagramPanel extends HTMLElement {
     const query = action.query
       ? `<div class="dg-detail-section"><h4>Query</h4><pre class="dg-detail-code">${esc(action.query)}</pre></div>`
       : '';
-    const script = action.script || action.scriptContent
-      ? `<div class="dg-detail-section"><h4>Script</h4>${action.script ? `<p class="dg-detail-sub">${esc(action.script)}</p>` : ''}${action.scriptContent ? `<pre class="dg-detail-code">${esc(truncate(action.scriptContent, 600))}</pre>` : ''}<p class="dg-detail-note">A transform may also read other sheets at runtime via <code>lookup()</code>; those links are not drawn.</p></div>`
+    const script = action.scriptContent
+      ? `<div class="dg-detail-section"><h4>Script</h4><pre class="dg-detail-code">${esc(truncate(action.scriptContent, 600))}</pre><p class="dg-detail-note">A transform may also read other sheets at runtime via <code>lookup()</code>; those links are not drawn.</p></div>`
       : '';
 
     return `<h3 class="dg-detail-title"><span class="dg-step-badge" style="background:${color}">${edge.step}</span> ${esc(action.name || 'Unnamed action')}</h3>

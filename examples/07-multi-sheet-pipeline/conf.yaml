@@ -2,6 +2,8 @@ appConfiguration:
   processingType: "api"
   apiVersion: "63.0"
 
+scriptFile: "./scripts.js"
+
 sheets:
   - name: "Accounts"
     fields:
@@ -40,7 +42,6 @@ actions:
     type: "transform"
     inputSheet: "Accounts"
     outputSheet: "Accounts Ready"
-    script: "./prepare-accounts.js"
 
   - name: "Update Account Enrichment"
     type: "update"
@@ -67,13 +68,11 @@ actions:
     type: "transform"
     inputSheet: "Activities"
     outputSheet: "Standard Activities"
-    script: "./prepare-standard-activities.js"
 
   - name: "Prepare High Priority Activities"
     type: "transform"
     inputSheet: "Activities"
     outputSheet: "High-Priority Activities"
-    script: "./prepare-high-priority-activities.js"
 
   - name: "Insert Standard Activities"
     type: "insert"
