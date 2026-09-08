@@ -103,6 +103,7 @@ async function main(): Promise<void> {
   let configuration;
   let actionRange: ResolvedActionRange | undefined;
   let inputs: ResolvedInputs;
+  let outputFolderCleaned = false;
   console.log('SF Data Pipeline');
   console.log(`[1/6] Loading configuration: ${options.confFile}`);
   try {
@@ -132,6 +133,7 @@ async function main(): Promise<void> {
       configuration.actions.map(action => action.errorSheet),
       [options.confFile, ...inputs.excelFiles, ...inputs.csvFiles].filter(Boolean)
     );
+    outputFolderCleaned = cleanup.mode === 'all';
     if (cleanup.mode === 'all') {
       console.log(`      Cleaned output folder: deleted ${cleanup.deletedFiles} file(s).`);
     } else if (cleanup.mode === 'errors') {
@@ -190,6 +192,34 @@ async function main(): Promise<void> {
       }
     }
     console.log(`      Ready: ${inputs.csvFiles.length} CSV file(s) and ${inputs.excelFiles.length} Excel file(s) indexed; sheets load on first use.`);
+
+    // Fall back to previously-generated output CSVs: if an action that would have
+    // produced a sheet is skipped (e.g. running a later --fromTask range), the sheet
+    // may already exist in the output folder from an earlier run. Register those CSVs
+    // as loaders too, so lookups resolve them. Input sheets always take precedence,
+    // and there is nothing to fall back to when the output folder was just wiped.
+    if (!outputFolderCleaned && fs.existsSync(path.resolve(options.outputFolder))) {
+      const outputCsvFiles = collectInputFilesFromFolder(options.outputFolder).csvFiles;
+      const registeredFromOutput: string[] = [];
+      for (const csvFile of outputCsvFiles) {
+        const sheetName = path.basename(csvFile, path.extname(csvFile));
+        if (sheets.isKnown(sheetName) || sheetName.toLocaleLowerCase().endsWith('-errors')) {
+          continue;
+        }
+        sheets.registerLoader(
+          sheetName,
+          async () => applyMappings(await CsvReader.readCsvFile(csvFile)),
+          () => applyMappings(CsvReader.readCsvFileSync(csvFile))
+        );
+        registeredFromOutput.push(sheetName);
+      }
+      if (registeredFromOutput.length) {
+        console.log(
+          `      Output folder fallback: ${registeredFromOutput.length} previously-generated sheet(s) available `
+          + `(${registeredFromOutput.map(name => `"${name}"`).join(', ')}).`
+        );
+      }
+    }
   } catch (error: any) {
     console.error(`      FAILED while indexing inputs: ${error.message}`);
     process.exitCode = 1;
