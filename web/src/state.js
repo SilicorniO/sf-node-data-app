@@ -14,7 +14,6 @@ export const defaultState = () => ({
     cleanOutputFolderBeforeExecution: false,
     deleteErrorFilesBeforeExecution: false,
   },
-  scriptFile: '',
   sheets: [],
   actions: [],
   activeTab: 'app',
@@ -70,7 +69,6 @@ function normalizeState(value = {}) {
       ...(value.appConfiguration || {}),
       processingType: value.appConfiguration?.processingType === 'bulk' ? 'bulk' : 'api',
     },
-    scriptFile: value.scriptFile || '',
     sheets: (value.sheets || []).map(sheet => ({
       id: sheet.id || uid(),
       name: sheet.name || '',

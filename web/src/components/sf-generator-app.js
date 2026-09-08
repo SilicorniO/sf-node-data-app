@@ -2,7 +2,7 @@ import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { ACTION_TYPES, actionDescription, createAction, sheetCatalog } from '../actions.js';
 import { notify, replaceState, resetState, restoreDraft, state, subscribe, uid } from '../state.js';
-import { buildSharedScript, generateYaml, parseSharedScript, parseYaml } from '../yaml.js';
+import { analyzeSharedScript, buildSharedScript, generateYaml, parseSharedScript, parseYaml } from '../yaml.js';
 import { esc, toast } from '../utils.js';
 import './sf-action-modal.js';
 import './sf-diagram-panel.js';
@@ -493,9 +493,9 @@ class SfGeneratorApp extends HTMLElement {
     await this.saveFile(result.yaml, 'conf.yaml', 'text/yaml', 'YAML configuration', ['.yaml', '.yml']);
 
     // Transform scripts travel in a single shared file so importing preloads them all.
-    if (result.configuration.scriptFile) {
-      const scriptName = result.configuration.scriptFile.split(/[\\/]/).pop() || 'scripts.js';
-      await this.saveFile(buildSharedScript(state), scriptName, 'text/javascript', 'CommonJS JavaScript', ['.js', '.cjs']);
+    // The CLI receives this file via --scriptFile; the YAML no longer names it.
+    if (state.actions.some(action => action.type === 'transform')) {
+      await this.saveFile(buildSharedScript(state), 'scripts.js', 'text/javascript', 'CommonJS JavaScript', ['.js', '.cjs']);
     }
   }
 
@@ -630,15 +630,27 @@ class SfGeneratorApp extends HTMLElement {
   }
 
   // Distributes the shared script file's contents into each transform action's editor,
-  // matching by action name. Missing entries fall back to the default template with a warning.
+  // matching by action name, and reports precisely what could not be matched so the user
+  // knows what is wrong instead of quietly getting blank editors.
   applySharedScript(scriptText) {
     const transforms = state.actions.filter(action => action.type === 'transform');
-    if (!transforms.length) return;
-    const names = transforms.map(action => action.name);
-    const scripts = scriptText.trim() ? parseSharedScript(scriptText, names) : null;
-    if (scriptText.trim() && !scripts) {
-      toast('Could not match any function in the script file to an action; open each transform to restore its code.', 'warning', 6000);
+    const hasScript = Boolean(scriptText.trim());
+
+    // No transforms in the YAML: a script file is pointless — say so rather than ignoring it.
+    if (!transforms.length) {
+      if (hasScript) {
+        toast('This configuration has no transform actions, so the script file was not used.', 'warning', 6000);
+      }
+      return;
     }
+
+    const names = transforms.map(action => action.name);
+    const analysis = hasScript ? analyzeSharedScript(scriptText) : null;
+    const scripts = hasScript ? parseSharedScript(scriptText, names) : null;
+
+    // Report structural problems with the loaded file before applying anything.
+    if (analysis) this.reportScriptFile(analysis, names);
+
     const missing = [];
     for (const action of transforms) {
       const content = scripts ? scripts[action.name] : undefined;
@@ -650,9 +662,27 @@ class SfGeneratorApp extends HTMLElement {
       }
     }
     if (scripts && missing.length) {
-      toast(`No script found for: ${missing.join(', ')}. Opening them shows a fresh template.`, 'warning', 6000);
+      toast(`No matching function for: ${missing.join(', ')}. Opening those actions shows a fresh template.`, 'warning', 7000);
     }
     notify('structure');
+  }
+
+  // Surfaces what is wrong with a loaded script file: not a shared module, functions whose
+  // keys match no action (typos / renamed actions), and module-level code that a UI
+  // re-export would drop.
+  reportScriptFile(analysis, actionNames) {
+    if (!analysis.hasExports && !analysis.keys.length) {
+      toast('The script file has no `module.exports` object keyed by action name; nothing could be loaded.', 'error', 8000);
+      return;
+    }
+    const known = new Set(actionNames);
+    const orphans = analysis.keys.filter(key => !known.has(key));
+    if (orphans.length) {
+      toast(`The script defines functions that match no transform action: ${orphans.join(', ')}. Check for renamed actions or typos.`, 'warning', 8000);
+    }
+    if (analysis.moduleLevel) {
+      toast('The script has module-level code (const/require) above the exports. It runs in the CLI, but is not carried into the per-action editors and would be lost on a UI re-export.', 'warning', 9000);
+    }
   }
 }
 

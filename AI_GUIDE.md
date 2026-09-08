@@ -15,11 +15,11 @@ actions in memory; produced sheets are written as CSV to the output folder.
 ## 1. YAML config structure
 
 Root has these keys (unknown keys are rejected); only `appConfiguration` and `actions`
-carry required content, `scriptFile` is required only when a transform action exists:
+carry required content. The transform script is **not** referenced in the YAML — it is
+passed on the command line with `--scriptFile` (see §2 and §5):
 
 ```yaml
 appConfiguration: { ... }   # global settings
-scriptFile: "./scripts.js"  # required if any transform action exists; path relative to the YAML
 sheets: [ ... ]             # optional header -> Salesforce API-name mappings
 actions: [ ... ]            # ordered pipeline steps
 ```
@@ -76,7 +76,7 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
   outputSheet: "Accounts"       # required; replaces sheet if it exists
   query: "SELECT Id, Name FROM Account"   # required (SOQL)
 
-# TRANSFORM — run a JS function row-by-row (function comes from the shared scriptFile)
+# TRANSFORM — run a JS function row-by-row (function comes from the --scriptFile module)
 - name: "Resolve Accounts"           # this name is the key into the shared script file
   type: "transform"
   inputSheet: "contacts"        # required
@@ -124,9 +124,10 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
 
 ## 2. Transform scripts
 
-- **One shared file** for the whole config, named by the top-level `scriptFile` (relative to
-  the YAML, e.g. `./scripts.js`). It is a CommonJS module that **exports an object keyed by
-  action name**: `module.exports = { "Resolve Accounts": function (row, ctx) { ... }, ... }`.
+- **One shared file** for the whole config, passed on the command line with `--scriptFile`
+  (e.g. `--scriptFile ./scripts.js`, resolved against the current working directory). It is a
+  CommonJS module that **exports an object keyed by action name**:
+  `module.exports = { "Resolve Accounts": function (row, ctx) { ... }, ... }`.
 - The key **must exactly match** the transform action's `name`. Action names are unique
   (case-insensitive), so keys never collide.
 - The file may `require()` sibling modules and declare module-level `const`/helpers above
@@ -192,8 +193,8 @@ Return `null` to filter (skip) a row; derive new columns by assigning `row.NewCo
 - `cleanOutputFolderBeforeExecution` refuses unsafe targets (root, home, cwd/parents, or any
   folder containing a selected input file).
 
-Convention: keep `conf.yaml`, input CSV/Excel, and the shared transform script (the file
-named by `scriptFile`, e.g. `scripts.js`) together in one folder (see `examples/`), and
+Convention: keep `conf.yaml`, input CSV/Excel, and the shared transform script (e.g.
+`scripts.js`, passed with `--scriptFile`) together in one folder (see `examples/`), and
 point `--outputFolder` at a separate `output/` dir.
 
 ---
@@ -204,11 +205,14 @@ point `--outputFolder` at a separate `output/` dir.
 npm install && npm run build
 
 # Run a config with a CSV input, writing results to ./output
+# Pass --scriptFile whenever the config has a transform action.
 node dist/Index.js -c examples/02-insert-contacts/conf.yaml \
+  -s examples/02-insert-contacts/scripts.js \
   -v examples/02-insert-contacts/contacts.csv -o output
 
 # Or run from TypeScript without building:
-npx ts-node src/Index.ts --confFile <conf.yaml> --csvFiles <data.csv> --outputFolder output
+npx ts-node src/Index.ts --confFile <conf.yaml> --scriptFile <scripts.js> \
+  --csvFiles <data.csv> --outputFolder output
 ```
 
 Phases: load+validate YAML → prepare output folder → index inputs → field mappings + SF auth
@@ -236,6 +240,7 @@ fine.
 | `--csvFiles <paths...>` | `-v` | no | — | One or more CSV inputs |
 | `--excelFile <path>` | `-e` | no | — | One Excel workbook |
 | `--inputFolder <path>` | `-i` | no | — | Scan folder (non-recursive) for CSV+Excel |
+| `--scriptFile <path>` | `-s` | only if a transform exists | — | Shared CommonJS transform module (keyed by action name), resolved against cwd |
 | `--outputFolder <path>` | `-o` | no | `./` | Output CSV folder |
 | `--fromTask <name\|index>` | — | no | first action | Start action (name, case-insensitive, or 1-based index) |
 | `--toTask <name\|index>` | — | no | last action | End action (inclusive) |
@@ -267,7 +272,6 @@ Folder `myjob/` with `conf.yaml`, `contacts.csv`, and `scripts.js` (exporting a
 appConfiguration:
   processingType: "api"
   apiVersion: "63.0"
-scriptFile: "./scripts.js"
 sheets:
   - name: "contacts"
     fields:
@@ -291,7 +295,7 @@ actions:
 ```
 
 ```bash
-node dist/Index.js -c myjob/conf.yaml -v myjob/contacts.csv -o output
+node dist/Index.js -c myjob/conf.yaml -s myjob/scripts.js -v myjob/contacts.csv -o output
 ```
 
 ## Checklist for a complete execution
@@ -299,7 +303,7 @@ node dist/Index.js -c myjob/conf.yaml -v myjob/contacts.csv -o output
 - [ ] `--confFile` points to a valid YAML with `actions`.
 - [ ] Every `inputSheet` is either an input file's sheet or a prior action's `outputSheet`.
 - [ ] `fields` rules honored: insert excludes `Id`; update includes `Id`; upsert includes `externalIdField`.
-- [ ] If any transform exists, top-level `scriptFile` is set and the shared file exports a function keyed by each transform action's `name`.
+- [ ] If any transform exists, `--scriptFile` is passed and the shared file exports a function keyed by each transform action's `name`.
 - [ ] Inputs supplied via `-v`/`-e`/`-i`; sheet names don't collide.
 - [ ] SF auth env vars set if any get/insert/update/upsert/delete action runs.
 - [ ] `--outputFolder` set (not a protected path if cleaning is enabled).

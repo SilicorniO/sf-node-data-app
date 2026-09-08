@@ -8,8 +8,6 @@ appConfiguration:
 # This mapping tells the app to treat that column as AccountId (the SF API field name).
 # After the export step retrieves the real Salesforce IDs, the transform step
 # replaces the account name value with the actual Salesforce Account Id.
-scriptFile: "./scripts.js"
-
 sheets:
   - name: "contacts"
     fields:

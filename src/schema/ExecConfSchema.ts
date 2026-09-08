@@ -6,11 +6,6 @@ const safeLogicalName = trimmed.refine(
   'must not contain path separators, "..", or control characters'
 );
 
-const scriptFilePath = trimmed.refine(
-  value => !value.includes('..') && ![...value].some(char => char.charCodeAt(0) < 0x20),
-  'must be a relative path without ".." or control characters'
-);
-
 const actionCommon = {
   name: safeLogicalName,
   waitBeforeSeconds: z.number().nonnegative().default(0),
@@ -137,17 +132,11 @@ const sheetSchema = z.object({
 
 export const execConfSchema = z.object({
   appConfiguration: appConfigurationSchema,
-  scriptFile: scriptFilePath.optional(),
   sheets: z.array(sheetSchema).default([]),
   actions: z.array(actionSchema).default([]),
 }).strict().superRefine((configuration, context) => {
   const actionNames = new Set<string>();
   const declaredSheetNames = new Set<string>();
-
-  const hasTransform = configuration.actions.some(action => action.type === 'transform');
-  if (hasTransform && !configuration.scriptFile) {
-    context.addIssue({ code: 'custom', path: ['scriptFile'], message: 'scriptFile is required when a transform action exists' });
-  }
 
   configuration.actions.forEach((action, index) => {
     const normalizedName = action.name.toLocaleLowerCase();

@@ -10,7 +10,6 @@ import { UpdateAction } from '../../src/model/UpdateAction';
 import { UpsertAction } from '../../src/model/UpsertAction';
 
 const allActionsYaml = `
-scriptFile: ./scripts.js
 actions:
   - type: get
     name: Get Accounts
@@ -45,7 +44,7 @@ actions:
 
 describe('ExecConfReader', () => {
   it('creates one concrete class per action type and applies defaults', () => {
-    const configuration = ExecConfReader.parseConf(allActionsYaml, '/configuration');
+    const configuration = ExecConfReader.parseConf(allActionsYaml, '/configuration/scripts.js');
 
     expect(configuration.actions).toHaveLength(6);
     expect(configuration.actions[0]).toBeInstanceOf(GetAction);
@@ -61,7 +60,7 @@ describe('ExecConfReader', () => {
       errorSheet: 'Get Accounts-errors',
     });
     expect((configuration.actions[1] as TransformAction).scriptFile).toBe(
-      path.resolve('/configuration', 'scripts.js')
+      path.resolve('/configuration/scripts.js')
     );
   });
 
@@ -132,7 +131,7 @@ actions:
       .toEqual([[], [], []]);
   });
 
-  it.each([
+  it.each<[string, string, string?]>([
     ['legacy objectsConf', `objectsConf: []`],
     ['legacy Salesforce CLI processing type', `appConfiguration:\n  processingType: sf`],
     ['legacy compound action', `actions:\n  - name: Old\n    exportAction:\n      query: SELECT Id FROM Account`],
@@ -143,10 +142,11 @@ actions:
     ['upsert without external field', `actions:\n  - { type: upsert, name: Upsert, object: Account, inputSheet: A, externalIdField: Key__c, fields: [Name] }`],
     ['delete with fields', `actions:\n  - { type: delete, name: Delete, object: Account, inputSheet: A, fields: [Id] }`],
     ['update with output', `actions:\n  - { type: update, name: Update, object: Account, inputSheet: A, outputSheet: B, fields: [Id] }`],
-    ['error sheet collision', `scriptFile: ./scripts.js\nactions:\n  - { type: transform, name: Transform, inputSheet: A, outputSheet: B, errorSheet: b }`],
-    ['transform without scriptFile', `actions:\n  - { type: transform, name: Transform, inputSheet: A, outputSheet: B }`],
-  ])('rejects %s', (_description, yaml) => {
-    expect(() => ExecConfReader.parseConf(yaml)).toThrow(/Error parsing configuration/);
+    ['error sheet collision', `actions:\n  - { type: transform, name: Transform, inputSheet: A, outputSheet: B, errorSheet: b }`, './scripts.js'],
+    ['transform without a script file', `actions:\n  - { type: transform, name: Transform, inputSheet: A, outputSheet: B }`, undefined],
+    ['unknown scriptFile key in YAML', `scriptFile: ./scripts.js\nactions: []`, undefined],
+  ])('rejects %s', (_description, yaml, scriptFile) => {
+    expect(() => ExecConfReader.parseConf(yaml, scriptFile)).toThrow(/Error parsing configuration/);
   });
 
   it('parses every bundled example using the canonical schema', () => {
@@ -157,7 +157,10 @@ actions:
 
     expect(configurationPaths).toHaveLength(7);
     for (const configurationPath of configurationPaths) {
-      expect(() => ExecConfReader.readConfFile(configurationPath), configurationPath).not.toThrow();
+      // Examples keep their shared transform script next to conf.yaml; pass it like the CLI would.
+      const scriptPath = path.join(path.dirname(configurationPath), 'scripts.js');
+      const scriptFile = fs.existsSync(scriptPath) ? scriptPath : undefined;
+      expect(() => ExecConfReader.readConfFile(configurationPath, scriptFile), configurationPath).not.toThrow();
     }
   });
 });

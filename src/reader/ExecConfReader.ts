@@ -17,12 +17,17 @@ import { execConfSchema, ParsedExecConf } from '../schema/ExecConfSchema';
 import { ZodError } from 'zod';
 
 export class ExecConfReader {
-  /** Reads a YAML config file from disk and parses it into an ExecConf. */
-  static readConfFile(confFilePath: string): ExecConf {
+  /**
+   * Reads a YAML config file from disk and parses it into an ExecConf.
+   * @param confFilePath Path to the YAML configuration file.
+   * @param scriptFilePath Optional path to the shared transform script, supplied on the CLI
+   *   (`--scriptFile`). Resolved relative to the current working directory by the caller.
+   */
+  static readConfFile(confFilePath: string, scriptFilePath?: string): ExecConf {
     try {
       const resolvedPath = path.resolve(confFilePath);
       const confFileContent = fs.readFileSync(resolvedPath, 'utf8');
-      return ExecConfReader.parseConf(confFileContent, path.dirname(resolvedPath));
+      return ExecConfReader.parseConf(confFileContent, scriptFilePath);
     } catch (error: any) {
       throw new Error(`Error reading or parsing configuration file: ${error.message}`);
     }
@@ -31,17 +36,16 @@ export class ExecConfReader {
   /**
    * Parses a YAML string into an ExecConf.
    * This method has no file-system dependency and can be used in the browser.
+   * @param scriptFilePath Optional path to the shared transform script (from `--scriptFile`).
    */
-  static parseConf(yamlString: string, baseDirectory = '.'): ExecConf {
+  static parseConf(yamlString: string, scriptFilePath?: string): ExecConf {
     try {
       const rawConfiguration = yaml.load(yamlString);
       const configuration = execConfSchema.parse(rawConfiguration);
-      const scriptFilePath = configuration.scriptFile
-        ? path.resolve(baseDirectory, configuration.scriptFile)
-        : undefined;
+      const resolvedScriptPath = scriptFilePath ? path.resolve(scriptFilePath) : undefined;
       return new ExecConf(
         this.parseAppConfiguration(configuration),
-        configuration.actions.map(action => this.parseAction(action, scriptFilePath)),
+        configuration.actions.map(action => this.parseAction(action, resolvedScriptPath)),
         configuration.sheets.map(sheet => new SheetConf(
           sheet.name,
           sheet.fields.map(field => new SheetField(field.name, field.apiName ?? field.name))
@@ -101,7 +105,7 @@ export class ExecConfReader {
         );
       case 'transform':
         if (!scriptFilePath) {
-          throw new Error(`Transform action "${action.name}" requires a top-level scriptFile.`);
+          throw new Error(`Transform action "${action.name}" requires a shared script; pass it with --scriptFile.`);
         }
         return new TransformAction(
           action.name,

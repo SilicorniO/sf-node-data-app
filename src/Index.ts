@@ -94,6 +94,7 @@ async function main(): Promise<void> {
     .option('-o, --outputFolder <path>', 'Folder where output CSV files are written', './')
     .option('-v, --csvFiles <paths...>', 'Paths to CSV input files')
     .option('-i, --inputFolder <path>', 'Folder scanned for all CSV and Excel input files')
+    .option('-s, --scriptFile <path>', 'Path to the shared CommonJS transform script (required if any transform action exists)')
     .option('--fromTask <nameOrIndex>', 'Start execution at this action name or 1-based index')
     .option('--toTask <nameOrIndex>', 'Stop execution after this action name or 1-based index')
     .parse(process.argv);
@@ -105,7 +106,7 @@ async function main(): Promise<void> {
   console.log('SF Data Pipeline');
   console.log(`[1/6] Loading configuration: ${options.confFile}`);
   try {
-    configuration = ExecConfReader.readConfFile(options.confFile);
+    configuration = ExecConfReader.readConfFile(options.confFile, options.scriptFile);
     inputs = resolveInputFiles(options);
     actionRange = resolveActionRange(configuration.actions, options.fromTask, options.toTask);
     console.log(

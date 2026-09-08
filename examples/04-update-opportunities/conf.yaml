@@ -4,8 +4,6 @@ appConfiguration:
   bulkApiPollIntervalSec: 5
   apiVersion: "63.0"
 
-scriptFile: "./scripts.js"
-
 actions:
   - name: "Get Existing Opportunities"
     type: "get"

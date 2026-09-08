@@ -2,8 +2,6 @@ appConfiguration:
   processingType: "api"
   apiVersion: "63.0"
 
-scriptFile: "./scripts.js"
-
 sheets:
   - name: "Accounts"
     fields:

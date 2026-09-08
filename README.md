@@ -51,9 +51,14 @@ Run from TypeScript:
 ```bash
 npx ts-node src/Index.ts \
   --confFile examples/02-insert-contacts/conf.yaml \
+  --scriptFile examples/02-insert-contacts/scripts.js \
   --csvFiles examples/02-insert-contacts/contacts.csv \
   --outputFolder output
 ```
+
+If the pipeline has any `transform` action, pass the shared CommonJS script with
+`--scriptFile` (`-s`). It is resolved relative to the current working directory and
+is required only when a transform exists; the YAML no longer references it.
 
 To run only part of a pipeline, pass `--fromTask` and/or `--toTask` with an action
 name (case-insensitive) or a 1-based YAML index. The range is inclusive.
@@ -156,8 +161,6 @@ appConfiguration:
   bulkApiMaxWaitSec: 300
   bulkApiPollIntervalSec: 5
   apiVersion: "63.0"
-
-scriptFile: ./scripts.js
 
 sheets:
   - name: contacts
@@ -337,9 +340,9 @@ blank ID are errors.
   outputSheet: contacts-ready
 ```
 
-Every transform function lives in one shared CommonJS module named by the top-level
-`scriptFile` (a trusted path relative to the YAML). The module exports an object keyed
-by each transform action's `name`:
+Every transform function lives in one shared CommonJS module passed on the command line
+with `--scriptFile` (`-s`), a trusted path resolved against the current working directory.
+The module exports an object keyed by each transform action's `name`:
 
 ```js
 // scripts.js

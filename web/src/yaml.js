@@ -1,8 +1,6 @@
 import { dump, load } from 'js-yaml';
 import { validateConfiguration } from './validation.js';
 
-export const DEFAULT_SCRIPT_FILE = './scripts.js';
-
 export function buildConfiguration(state) {
   const app = state.appConfiguration;
   const appConfiguration = {
@@ -31,9 +29,6 @@ export function buildConfiguration(state) {
 
   const actions = state.actions.map(buildActionConfiguration);
   const configuration = { appConfiguration };
-  if (actions.some(action => action.type === 'transform')) {
-    configuration.scriptFile = value(state.scriptFile) || DEFAULT_SCRIPT_FILE;
-  }
   if (sheets.length) configuration.sheets = sheets;
   if (actions.length) configuration.actions = actions;
   return configuration;
@@ -219,6 +214,61 @@ function parseWithMarkers(text) {
     if (currentName !== null) buffer.push(line);
   }
   return result;
+}
+
+// Inspects a shared script file and reports what the importer can and cannot use, so the
+// UI can tell the user precisely what is wrong instead of silently blanking editors.
+// Returns { hasExports, hasMarkers, keys, moduleLevel } where `keys` are the quoted object
+// keys found (action-name candidates) and `moduleLevel` flags top-level const/require that
+// would not survive a UI round-trip.
+export function analyzeSharedScript(text) {
+  const source = String(text || '');
+  const hasMarkers = source.includes(MARKER_START);
+  const hasExports = /module\.exports\s*=/.test(source);
+  const keys = hasMarkers ? markerNames(source) : objectKeys(source);
+  // Anything declared before the export is module-level scope that per-action editors lose.
+  const preamble = source.split(/module\.exports\s*=/)[0] || '';
+  const moduleLevel = /^\s*(?:const|let|var)\b/m.test(preamble) || /\brequire\s*\(/.test(preamble);
+  return { hasExports, hasMarkers, keys, moduleLevel };
+}
+
+function markerNames(text) {
+  const names = [];
+  for (const line of text.split('\n')) {
+    const index = line.indexOf(MARKER_START);
+    if (index !== -1) names.push(line.slice(index + MARKER_START.length).trim());
+  }
+  return names;
+}
+
+// Collects the quoted keys that are immediately followed by a function/arrow value, i.e. the
+// action-name candidates in a shared object literal. Walks the source honoring strings and
+// comments so a quote inside a comment or string body is never mistaken for a key.
+function objectKeys(text) {
+  const keys = [];
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === '/' && text[index + 1] === '/') {
+      const end = text.indexOf('\n', index);
+      index = end === -1 ? text.length : end;
+      continue;
+    }
+    if (char === '/' && text[index + 1] === '*') {
+      const end = text.indexOf('*/', index + 2);
+      index = end === -1 ? text.length : end + 1;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      const close = skipString(text, index, char);
+      const raw = text.slice(index + 1, close);
+      // Only a quoted token followed by `: function|(` (an arrow or function value) is a key.
+      const after = text.slice(close + 1).match(/^\s*:\s*(?:async\s+)?(?:function\b|\()/);
+      if (after && char !== '`') keys.push(raw.replace(/\\(.)/g, '$1'));
+      index = close;
+      continue;
+    }
+  }
+  return keys;
 }
 
 // Locates each `'<name>': function ... { ... }` entry by its exact key and captures the
