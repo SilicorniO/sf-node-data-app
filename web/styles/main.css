@@ -132,6 +132,7 @@ h3 { font-size: 14px; }
 .type-update { background: #cffafe; color: #0e7490; }
 .type-upsert { background: #e0e7ff; color: #3730a3; }
 .type-delete { background: #fee2e2; color: #991b1b; }
+.type-merge { background: #f3e8ff; color: #6b21a8; }
 
 .preview-pane { position: sticky; top: 94px; height: calc(100vh - 112px); }
 .preview-card { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
@@ -178,6 +179,67 @@ h3 { font-size: 14px; }
 .chip button { cursor: pointer; color: inherit; background: none; padding: 0; }
 .chip.locked { background: #ecfdf5; color: #047857; }
 
+/* Diagram view */
+.workspace-full { grid-template-columns: 1fr; }
+.editor-pane-diagram { display: flex; flex-direction: column; }
+.editor-scroll-diagram { flex: 1; padding: 0; min-height: 0; display: flex; }
+sf-diagram-panel { flex: 1; min-width: 0; display: flex; }
+.diagram-empty { max-width: 940px; margin: 40px auto; }
+
+.diagram-wrap { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto 1fr; }
+.diagram-toolbar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface-soft); flex-wrap: wrap; }
+.diagram-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.diagram-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 750; }
+.diagram-legend-item i { width: 12px; height: 4px; border-radius: 2px; display: inline-block; }
+.diagram-controls { display: flex; align-items: center; gap: 6px; }
+
+.diagram-canvas { position: relative; overflow: hidden; background:
+  radial-gradient(circle at center, #e9edf5 1px, transparent 1px) 0 0 / 22px 22px, var(--bg);
+  cursor: grab; touch-action: none; min-height: 420px; }
+.diagram-canvas.grabbing { cursor: grabbing; }
+.diagram-svg { position: absolute; inset: 0; display: block; }
+
+.dg-node { cursor: pointer; }
+.dg-sheet rect { fill: var(--surface); stroke: #cbd5e1; stroke-width: 1.5; filter: drop-shadow(0 4px 10px rgba(15, 23, 42, .06)); transition: stroke .15s; }
+.dg-node:hover rect { stroke: #94a3b8; }
+.dg-node.selected rect { stroke: var(--primary); stroke-width: 2.5; }
+.dg-sheet.is-error rect { stroke: #f0a3a3; stroke-dasharray: 5 3; }
+.dg-sheet-name { font-size: 13px; font-weight: 750; fill: var(--text); }
+.dg-sheet-meta { font-size: 11px; fill: var(--muted); }
+.dg-salesforce rect { fill: #eef4ff; stroke: #93b4f5; stroke-width: 1.5; }
+.dg-salesforce.selected rect { stroke: var(--primary); stroke-width: 2.5; }
+.dg-sf-icon { font-size: 26px; fill: #2563eb; }
+.dg-sf-label { font-size: 12px; font-weight: 800; fill: #1d4ed8; }
+
+.dg-edge { cursor: pointer; }
+.dg-edge-hit { fill: none; stroke: transparent; stroke-width: 16; }
+.dg-edge-line { fill: none; stroke-width: 2; transition: stroke-width .15s; }
+.dg-edge:hover .dg-edge-line, .dg-edge.selected .dg-edge-line { stroke-width: 3.5; }
+.dg-step { stroke: white; stroke-width: 2; }
+.dg-step-text { font-size: 11px; font-weight: 850; fill: white; }
+.dg-edge-text { font-size: 11px; font-weight: 650; fill: #334155; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; opacity: 0; transition: opacity .12s; pointer-events: none; }
+.dg-edge:hover .dg-edge-text, .dg-edge.selected .dg-edge-text { opacity: 1; }
+.dg-edge:hover .dg-edge-label, .dg-edge.selected .dg-edge-label { pointer-events: none; }
+
+.diagram-detail { border-left: 1px solid var(--border); background: var(--surface); padding: 18px; overflow-y: auto; position: relative; }
+.diagram-detail.empty { color: var(--muted); display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; }
+.diagram-detail-close { position: absolute; top: 10px; right: 10px; }
+.dg-detail-title { font-size: 15px; display: flex; align-items: center; gap: 8px; padding-right: 30px; margin-bottom: 6px; }
+.dg-detail-sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.dg-detail-note { color: var(--subtle); font-size: 11px; margin-top: 8px; line-height: 1.5; }
+.dg-step-badge { width: 24px; height: 24px; flex: 0 0 auto; display: inline-grid; place-items: center; border-radius: 50%; color: white; font-size: 12px; font-weight: 850; }
+.dg-tag { padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.dg-tag.error { background: #fef2f2; color: #b91c1c; }
+.dg-detail-section { margin-top: 16px; }
+.dg-detail-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #475569; margin-bottom: 8px; }
+.dg-detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.dg-detail-table th, .dg-detail-table td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.dg-detail-table.kv th { width: 42%; color: var(--muted); font-weight: 700; }
+.dg-detail-table thead th { color: var(--subtle); font-size: 10px; text-transform: uppercase; }
+.dg-detail-code { background: #111827; color: #bbf7d0; border-radius: 8px; padding: 10px 12px; font-size: 11px; line-height: 1.5; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.dg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dg-chip { padding: 4px 8px; border-radius: 6px; background: #eef2ff; color: #4338ca; font-size: 11px; font-weight: 650; }
+
 .toast { position: fixed; right: 22px; bottom: 22px; z-index: 200; max-width: min(480px, calc(100vw - 44px)); padding: 11px 14px; border-radius: 9px; color: white; background: #059669; box-shadow: 0 12px 30px rgba(15, 23, 42, .2); opacity: 0; transform: translateY(8px); pointer-events: none; transition: .18s; }
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.error { background: #dc2626; }
@@ -190,6 +252,8 @@ h3 { font-size: 14px; }
   .editor-tabs { display: none; }
   .mobile-preview { display: flex; min-height: calc(100vh - 165px); }
   .editor-pane { min-height: auto; }
+  .diagram-wrap { grid-template-columns: 1fr; grid-template-rows: auto minmax(360px, 60vh) auto; }
+  .diagram-detail { border-left: 0; border-top: 1px solid var(--border); max-height: 40vh; }
 }
 
 @media (max-width: 650px) {

@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",
+    "@dagrejs/dagre": "^3.1.1",
     "axios": "^1.9.0",
     "codemirror": "^6.0.2",
     "commander": "^13.1.0",

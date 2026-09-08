@@ -5,6 +5,7 @@ import { notify, replaceState, resetState, restoreDraft, state, subscribe, uid }
 import { generateYaml, parseYaml } from '../yaml.js';
 import { esc, toast } from '../utils.js';
 import './sf-action-modal.js';
+import './sf-diagram-panel.js';
 
 class SfGeneratorApp extends HTMLElement {
   constructor() {
@@ -53,17 +54,18 @@ class SfGeneratorApp extends HTMLElement {
         ${this.tabs()}
       </nav>
 
-      <main class="workspace">
-        <section class="editor-pane">
+      <main class="workspace ${state.activeTab === 'diagram' ? 'workspace-full' : ''}">
+        <section class="editor-pane ${state.activeTab === 'diagram' ? 'editor-pane-diagram' : ''}">
           <nav class="editor-tabs" aria-label="Configuration sections">${this.tabs(false)}</nav>
-          <div class="editor-scroll">
+          <div class="editor-scroll ${state.activeTab === 'diagram' ? 'editor-scroll-diagram' : ''}">
             ${state.activeTab === 'app' ? this.appPanel() : ''}
             ${state.activeTab === 'sheets' ? this.sheetsPanel() : ''}
             ${state.activeTab === 'actions' ? this.actionsPanel() : ''}
             ${state.activeTab === 'preview' ? this.previewPanel(true) : ''}
+            ${state.activeTab === 'diagram' ? '<sf-diagram-panel></sf-diagram-panel>' : ''}
           </div>
         </section>
-        <aside class="preview-pane">${this.previewPanel(false)}</aside>
+        ${state.activeTab === 'diagram' ? '' : `<aside class="preview-pane">${this.previewPanel(false)}</aside>`}
       </main>
 
       <sf-action-modal></sf-action-modal>
@@ -79,6 +81,7 @@ class SfGeneratorApp extends HTMLElement {
       ['sheets', '2', `Sheets ${state.sheets.length ? `(${state.sheets.length})` : ''}`],
       ['actions', '3', `Actions ${state.actions.length ? `(${state.actions.length})` : ''}`],
       ...(includePreview ? [['preview', '4', 'Preview']] : []),
+      ['diagram', includePreview ? '5' : '4', 'Diagram'],
     ];
     return items.map(([value, number, label]) => `
       <button class="tab ${state.activeTab === value ? 'active' : ''}" data-tab="${value}">
@@ -404,6 +407,7 @@ class SfGeneratorApp extends HTMLElement {
         notify('tab');
       }
     }));
+    this.querySelector('sf-diagram-panel')?.update(state);
   }
 
   refreshPreview() {
