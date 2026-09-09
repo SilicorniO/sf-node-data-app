@@ -8,13 +8,6 @@
     "sfdata": "./dist/Index.js"
   },
   "scripts": {
-    "start": "ts-node src/Index.ts -e input/carga_eci_conf.xlsx -c input/conf_eci_conf.yaml -o output",
-    "start-delete": "ts-node src/Index.ts  -c input/conf_eci_delete.yaml -o output",
-    "start-import": "ts-node src/Index.ts -e input/example.xlsx -c input/conf_import.yaml -o output",
-    "start-csv": "ts-node src/Index.ts --csvFiles input/data.csv -c input/conf_csv.yaml -o output",
-    "start-csv-big": "ts-node src/Index.ts --csvFiles input/data_big.csv -c input/conf_csv_big.yaml -o output",
-    "debug": "node --inspect-brk -r ts-node/register src/Index.ts -e input/carga_eci_conf.xlsx -c input/conf_eci_conf.yaml -o output",
-    "debug-csv": "node --inspect-brk -r ts-node/register src/Index.ts --csvFiles input/data.csv -c input/conf_csv.yaml -o output",
     "test": "vitest run",
     "build": "npx tsc",
     "build:executables": "npm run build && pkg .",
