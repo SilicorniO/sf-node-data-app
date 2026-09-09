@@ -1,9 +1,6 @@
-import dagre from '@dagrejs/dagre';
-import { buildDiagramGraph, SALESFORCE_NODE_ID } from '../diagram-model.js';
+import { buildDiagramGraph } from '../diagram-model.js';
 import { sheetCatalog } from '../actions.js';
 import { esc } from '../utils.js';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // Layout metrics.
 const NODE_WIDTH = 190;
@@ -11,6 +8,10 @@ const NODE_HEIGHT = 62;
 const SF_WIDTH = 150;
 const SF_HEIGHT = 82;
 const PADDING = 48;
+const ROW_HEIGHT = 108;          // vertical pitch between lanes
+const COLUMN_GAP_MIN = 60;       // horizontal gap between columns (excl. box width)
+const COLUMN_GAP_MAX = 420;
+const COLUMN_GAP_DEFAULT = 150;
 
 // Action type -> arrow colour. Mirrors the .type-* families in main.css.
 const TYPE_COLOR = {
@@ -41,9 +42,10 @@ class SfDiagramPanel extends HTMLElement {
     // View transform (pan/zoom) applied to the SVG root group.
     this.view = { x: 0, y: 0, scale: 1 };
     this.selection = null; // { kind: 'node'|'edge', id }
-    this.graph = { nodes: [], edges: [] };
+    this.graph = { nodes: [], edges: [], columnCount: 0 };
     this.layout = null;
     this.pan = null; // active pointer-drag state
+    this.columnGap = COLUMN_GAP_DEFAULT;
   }
 
   // `state` is passed in from the host each render so this component stays
@@ -52,7 +54,7 @@ class SfDiagramPanel extends HTMLElement {
     this.state = state;
     const catalog = sheetCatalog(state, state.actions.length);
     this.graph = buildDiagramGraph(state, catalog);
-    this.layout = this.graph.nodes.length ? computeLayout(this.graph) : null;
+    this.layout = this.graph.nodes.length ? this.computeLayout() : null;
     // Drop a stale selection if its target no longer exists.
     if (this.selection && !this.findSelection()) this.selection = null;
     this.render();
@@ -88,8 +90,15 @@ class SfDiagramPanel extends HTMLElement {
         <div class="diagram-toolbar">
           <div class="diagram-legend">${this.legend()}</div>
           <div class="diagram-controls">
-            <button class="icon-button" data-zoom="out" title="Zoom out">−</button>
-            <button class="icon-button" data-zoom="in" title="Zoom in">＋</button>
+            <label class="diagram-gap" title="Spacing between columns">
+              <span>Spacing</span>
+              <input type="range" min="${COLUMN_GAP_MIN}" max="${COLUMN_GAP_MAX}" step="10" value="${this.columnGap}" data-gap>
+            </label>
+            <div class="diagram-zoom" role="group" aria-label="Zoom">
+              <button class="icon-button" data-zoom="out" title="Zoom out">−</button>
+              <button class="dg-zoom-level" data-zoom="reset" title="Reset zoom to 100%">${Math.round(this.view.scale * 100)}%</button>
+              <button class="icon-button" data-zoom="in" title="Zoom in">＋</button>
+            </div>
             <button class="button secondary compact-button" data-fit>Fit</button>
           </div>
         </div>
@@ -110,15 +119,11 @@ class SfDiagramPanel extends HTMLElement {
   }
 
   svgMarkup() {
-    const { width, height } = this.layout;
     const arrowDefs = Object.entries(TYPE_COLOR).map(([type, color]) => `
       <marker id="arrow-${type}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
         <path d="M0,0 L10,5 L0,10 z" fill="${color}"></path>
       </marker>`).join('');
 
-    // width/height reserved for future use; the SVG fills the canvas and the
-    // root group is pan/zoomed to reveal the full layout.
-    void width; void height;
     return `<svg class="diagram-svg" width="100%" height="100%">
       <defs>${arrowDefs}</defs>
       <g data-root transform="translate(0,0) scale(1)">
@@ -146,10 +151,18 @@ class SfDiagramPanel extends HTMLElement {
     }
 
     const count = node.fieldCount == null ? '' : `${node.fieldCount} ${node.fieldCount === 1 ? 'field' : 'fields'}`;
+    // A superseded (re-written) sheet carries a small "overwrites" badge.
+    const badge = node.supersedes
+      ? `<g class="dg-supersede-badge" transform="translate(${w - 8},-8)">
+          <rect class="dg-supersede-rect" x="-96" width="96" height="18" rx="9"></rect>
+          <text class="dg-supersede-text" x="-48" y="13" text-anchor="middle">↻ overwrites</text>
+        </g>`
+      : '';
     return `<g class="dg-node dg-sheet ${node.isError ? 'is-error' : ''} ${selected ? 'selected' : ''}" data-node="${esc(node.id)}" transform="translate(${x},${y})">
       <rect width="${w}" height="${h}" rx="12"></rect>
       <text class="dg-sheet-name" x="12" y="26">${esc(truncate(node.name, 24))}</text>
       <text class="dg-sheet-meta" x="12" y="46">${esc(count)}${node.isError ? ' · errors' : ''}</text>
+      ${badge}
     </g>`;
   }
 
@@ -159,17 +172,21 @@ class SfDiagramPanel extends HTMLElement {
     const color = TYPE_COLOR[edge.type] || '#64748b';
     const selected = this.selection?.kind === 'edge' && this.selection.id === edge.id;
     const { d, mid } = path;
-    const label = `${TYPE_ICON[edge.type] || ''} ${edge.name || edge.type}${edge.object ? ` → ${edge.object}` : ''}`;
-    // The step badge is always visible; the text label rides on the curve but
-    // only fully renders on hover/selection so hub nodes stay uncluttered.
+    // The action IS the vector; its name is always visible (truncated). The
+    // secondary segment of a multi-step action (e.g. insert -> output) is
+    // unlabeled since the same action continues through the Salesforce box.
+    const label = edge.labeled
+      ? `${TYPE_ICON[edge.type] || ''} ${edge.name || edge.type}${edge.object ? ` → ${edge.object}` : ''}`
+      : '';
+    const labelMarkup = label
+      ? `<g class="dg-edge-label" transform="translate(${mid.x},${mid.y})">
+          <text class="dg-edge-text" text-anchor="middle" dy="-6">${esc(truncate(label, 40))}</text>
+        </g>`
+      : '';
     return `<g class="dg-edge ${selected ? 'selected' : ''}" data-edge="${esc(edge.id)}">
       <path class="dg-edge-hit" d="${d}"></path>
       <path class="dg-edge-line" d="${d}" stroke="${color}" marker-end="url(#arrow-${edge.type})"></path>
-      <g class="dg-edge-label" transform="translate(${mid.x},${mid.y})">
-        <text class="dg-edge-text" x="15" dy="4">${esc(truncate(label, 30))}</text>
-        <circle class="dg-step" r="11" fill="${color}"></circle>
-        <text class="dg-step-text" text-anchor="middle" dy="3.5">${edge.step}</text>
-      </g>
+      ${labelMarkup}
     </g>`;
   }
 
@@ -197,13 +214,16 @@ class SfDiagramPanel extends HTMLElement {
           <tbody>${(sheet.fields || []).map(f => `<tr><td>${esc(f.name)}</td><td>${esc(f.translate && f.apiName ? f.apiName : f.name)}</td></tr>`).join('') || '<tr><td colspan="2">No columns</td></tr>'}</tbody></table>
         </div>`
       : `<p class="dg-detail-sub">Produced during the pipeline (not a declared input sheet).</p>`;
+    const supersede = node.supersedes
+      ? `<p class="dg-detail-note">This box re-writes an earlier sheet of the same name; later reads use this newer version.</p>`
+      : '';
     return `<h3 class="dg-detail-title">${esc(node.name)}${node.isError ? ' <span class="dg-tag error">error sheet</span>' : ''}</h3>
       <p class="dg-detail-sub">${node.fieldCount == null ? 'Unknown field count' : `${node.fieldCount} declared field${node.fieldCount === 1 ? '' : 's'}`}</p>
-      ${declared}`;
+      ${supersede}${declared}`;
   }
 
   edgeDetail(edge) {
-    const action = (this.state.actions || [])[edge.step - 1] || {};
+    const action = (this.state.actions || [])[edge.actionIndex] || {};
     const color = TYPE_COLOR[edge.type] || '#64748b';
     const rows = [];
     const row = (label, value) => { if (value != null && value !== '') rows.push([label, value]); };
@@ -230,7 +250,7 @@ class SfDiagramPanel extends HTMLElement {
       ? `<div class="dg-detail-section"><h4>Script</h4><pre class="dg-detail-code">${esc(truncate(action.scriptContent, 600))}</pre><p class="dg-detail-note">A transform may also read other sheets at runtime via <code>lookup()</code>; those links are not drawn.</p></div>`
       : '';
 
-    return `<h3 class="dg-detail-title"><span class="dg-step-badge" style="background:${color}">${edge.step}</span> ${esc(action.name || 'Unnamed action')}</h3>
+    return `<h3 class="dg-detail-title"><span class="dg-type-dot" style="background:${color}"></span> ${esc(action.name || 'Unnamed action')}</h3>
       <table class="dg-detail-table kv"><tbody>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</tbody></table>
       ${fields}${query}${script}`;
   }
@@ -238,8 +258,15 @@ class SfDiagramPanel extends HTMLElement {
   bind() {
     this.querySelector('[data-fit]')?.addEventListener('click', () => this.fit());
     this.querySelectorAll('[data-zoom]').forEach(button => button.addEventListener('click', () => {
-      this.zoomBy(button.dataset.zoom === 'in' ? 1.2 : 1 / 1.2);
+      const mode = button.dataset.zoom;
+      if (mode === 'reset') this.zoomTo(1);
+      else this.zoomBy(mode === 'in' ? 1.2 : 1 / 1.2);
     }));
+    this.querySelector('[data-gap]')?.addEventListener('input', event => {
+      this.columnGap = clamp(Number(event.target.value) || COLUMN_GAP_DEFAULT, COLUMN_GAP_MIN, COLUMN_GAP_MAX);
+      this.layout = this.graph.nodes.length ? this.computeLayout() : null;
+      this.render();
+    });
     this.querySelector('[data-close-detail]')?.addEventListener('click', () => {
       this.selection = null;
       this.render();
@@ -260,26 +287,68 @@ class SfDiagramPanel extends HTMLElement {
     canvas.addEventListener('wheel', event => {
       event.preventDefault();
       const rect = canvas.getBoundingClientRect();
-      // Scale the step by scroll delta so a small trackpad flick barely zooms;
-      // clamped so a single big wheel notch can't jump too far.
-      const factor = Math.exp(clamp(-event.deltaY, -40, 40) * 0.002);
-      this.zoomAt(factor, event.clientX - rect.left, event.clientY - rect.top);
+      if (event.ctrlKey) {
+        // Pinch-zoom on a trackpad arrives as a ctrl+wheel event.
+        const factor = Math.exp(clamp(-event.deltaY, -40, 40) * 0.01);
+        this.zoomAt(factor, event.clientX - rect.left, event.clientY - rect.top);
+        return;
+      }
+      // Plain scroll (horizontal or vertical) moves the camera, never zooms.
+      this.view.x -= event.deltaX;
+      this.view.y -= event.deltaY;
+      this.applyTransform();
     }, { passive: false });
+
+    // Track active pointers to support two-finger pinch-zoom on touch screens.
+    this.pointers = new Map();
     canvas.addEventListener('pointerdown', event => {
       if (event.target.closest('[data-node],[data-edge]')) return;
-      this.pan = { x: event.clientX, y: event.clientY, vx: this.view.x, vy: this.view.y };
+      // Prevent the browser from starting a text selection while panning.
+      event.preventDefault();
       canvas.setPointerCapture(event.pointerId);
-      canvas.classList.add('grabbing');
+      this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.pointers.size === 2) {
+        this.pinch = this.pinchState(canvas);
+        this.pan = null;
+        canvas.classList.remove('grabbing');
+      } else if (this.pointers.size === 1) {
+        this.pan = { x: event.clientX, y: event.clientY, vx: this.view.x, vy: this.view.y };
+        canvas.classList.add('grabbing');
+      }
     });
     canvas.addEventListener('pointermove', event => {
+      if (this.pointers.has(event.pointerId)) {
+        this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      }
+      if (this.pinch && this.pointers.size >= 2) {
+        const next = this.pinchState(canvas);
+        if (this.pinch.dist > 0) this.zoomAt(next.dist / this.pinch.dist, next.cx, next.cy);
+        this.pinch = next;
+        return;
+      }
       if (!this.pan) return;
       this.view.x = this.pan.vx + (event.clientX - this.pan.x);
       this.view.y = this.pan.vy + (event.clientY - this.pan.y);
       this.applyTransform();
     });
-    const endPan = () => { this.pan = null; canvas.classList.remove('grabbing'); };
-    canvas.addEventListener('pointerup', endPan);
-    canvas.addEventListener('pointercancel', endPan);
+    const endPointer = event => {
+      this.pointers.delete(event.pointerId);
+      if (this.pointers.size < 2) this.pinch = null;
+      if (this.pointers.size === 0) { this.pan = null; canvas.classList.remove('grabbing'); }
+    };
+    canvas.addEventListener('pointerup', endPointer);
+    canvas.addEventListener('pointercancel', endPointer);
+  }
+
+  // Midpoint + finger distance of the two active pointers, in canvas coords.
+  pinchState(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const [a, b] = [...this.pointers.values()];
+    return {
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+      cx: (a.x + b.x) / 2 - rect.left,
+      cy: (a.y + b.y) / 2 - rect.top,
+    };
   }
 
   select(kind, id) {
@@ -290,6 +359,8 @@ class SfDiagramPanel extends HTMLElement {
   applyTransform() {
     const root = this.querySelector('[data-root]');
     if (root) root.setAttribute('transform', `translate(${this.view.x},${this.view.y}) scale(${this.view.scale})`);
+    const level = this.querySelector('.dg-zoom-level');
+    if (level) level.textContent = `${Math.round(this.view.scale * 100)}%`;
   }
 
   zoomBy(factor) {
@@ -297,6 +368,13 @@ class SfDiagramPanel extends HTMLElement {
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     this.zoomAt(factor, rect.width / 2, rect.height / 2);
+  }
+
+  zoomTo(scale) {
+    const canvas = this.querySelector('[data-canvas]');
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    this.zoomAt(scale / this.view.scale, rect.width / 2, rect.height / 2);
   }
 
   zoomAt(factor, cx, cy) {
@@ -322,72 +400,86 @@ class SfDiagramPanel extends HTMLElement {
     this.applyTransform();
     return true;
   }
-}
 
-// Run dagre and translate its output into node positions + bezier edge paths.
-function computeLayout(graph) {
-  const g = new dagre.graphlib.Graph({ multigraph: true });
-  g.setGraph({
-    rankdir: 'LR',
-    nodesep: 70,
-    ranksep: 150,
-    edgesep: 30,
-    marginx: PADDING,
-    marginy: PADDING,
-  });
-  g.setDefaultEdgeLabel(() => ({}));
+  // Manual timeline layout: x is driven by the column (execution moment); y
+  // stacks a column's boxes by their creation lane. Edges are smooth curves
+  // between resolved box borders and can span arbitrary column distances.
+  computeLayout() {
+    const { nodes } = this.graph;
+    const colStep = NODE_WIDTH + this.columnGap;
 
-  graph.nodes.forEach(node => {
-    const isSf = node.kind === 'salesforce';
-    g.setNode(node.id, { width: isSf ? SF_WIDTH : NODE_WIDTH, height: isSf ? SF_HEIGHT : NODE_HEIGHT });
-  });
-  graph.edges.forEach(edge => {
-    // Reserve horizontal room for the edge label so dagre spaces ranks enough
-    // that labels don't land on top of the next node.
-    g.setEdge(edge.from, edge.to, { minlen: 1, width: 120, height: 24, labelpos: 'c' }, edge.id);
-  });
+    // Assign each node a row *within* its column (compact, top-aligned).
+    const rowInColumn = new Map();
+    const byColumn = new Map();
+    nodes.forEach(node => {
+      const list = byColumn.get(node.column) || [];
+      list.push(node);
+      byColumn.set(node.column, list);
+    });
+    byColumn.forEach(list => {
+      list.sort((a, b) => a.lane - b.lane);
+      list.forEach((node, row) => rowInColumn.set(node.id, row));
+    });
 
-  dagre.layout(g);
+    const positioned = new Map();
+    nodes.forEach(node => {
+      const isSf = node.kind === 'salesforce';
+      const width = isSf ? SF_WIDTH : NODE_WIDTH;
+      const height = isSf ? SF_HEIGHT : NODE_HEIGHT;
+      const x = PADDING + node.column * colStep + NODE_WIDTH / 2;
+      const y = PADDING + rowInColumn.get(node.id) * ROW_HEIGHT + NODE_HEIGHT / 2;
+      positioned.set(node.id, { x, y, width, height });
+    });
 
-  const nodes = new Map();
-  graph.nodes.forEach(node => {
-    const n = g.node(node.id);
-    if (n) nodes.set(node.id, { x: n.x, y: n.y, width: n.width, height: n.height });
-  });
+    // Bounds.
+    let maxX = 0;
+    let maxY = 0;
+    positioned.forEach(p => {
+      maxX = Math.max(maxX, p.x + p.width / 2);
+      maxY = Math.max(maxY, p.y + p.height / 2);
+    });
 
-  const edges = new Map();
-  graph.edges.forEach(edge => {
-    const e = g.edge(edge.from, edge.to, edge.id);
-    if (!e || !e.points || e.points.length < 2) return;
-    const path = buildEdgePath(e.points);
-    // dagre positions a collision-avoided label box at (e.x, e.y); prefer it.
-    if (Number.isFinite(e.x) && Number.isFinite(e.y)) path.mid = { x: e.x, y: e.y };
-    edges.set(edge.id, path);
-  });
+    const edges = new Map();
+    this.graph.edges.forEach(edge => {
+      const a = positioned.get(edge.from);
+      const b = positioned.get(edge.to);
+      if (!a || !b) return;
+      edges.set(edge.id, edgePath(a, b));
+    });
 
-  const gg = g.graph();
-  const width = (gg.width || 0) + PADDING;
-  const height = (gg.height || 0) + PADDING;
-  return { nodes, edges, width, height };
-}
-
-// Smooth the dagre polyline into a rounded cubic-bezier path (Catmull-Rom).
-function buildEdgePath(points) {
-  const pts = points;
-  let d = `M${pts[0].x},${pts[0].y}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] || p2;
-    const c1x = p1.x + (p2.x - p0.x) / 6;
-    const c1y = p1.y + (p2.y - p0.y) / 6;
-    const c2x = p2.x - (p3.x - p1.x) / 6;
-    const c2y = p2.y - (p3.y - p1.y) / 6;
-    d += ` C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+    return { nodes: positioned, edges, width: maxX + PADDING, height: maxY + PADDING };
   }
-  const mid = pts[Math.floor(pts.length / 2)];
-  return { d, mid: { x: mid.x, y: mid.y } };
+}
+
+// Orthogonal (90°) router with rounded corners: exit A horizontally, turn
+// vertically at a mid-x channel, then enter B horizontally. Rounded elbows keep
+// it readable. Straight horizontal links (same row) stay a simple line.
+function edgePath(a, b) {
+  const forward = b.x >= a.x;
+  const x1 = a.x + (forward ? a.width / 2 : -a.width / 2);
+  const y1 = a.y;
+  const x2 = b.x + (forward ? -b.width / 2 : b.width / 2);
+  const y2 = b.y;
+
+  if (Math.abs(y1 - y2) < 1) {
+    return { d: `M${x1},${y1} L${x2},${y2}`, mid: { x: (x1 + x2) / 2, y: y1 } };
+  }
+
+  const midX = (x1 + x2) / 2;
+  const dir = forward ? 1 : -1;                       // horizontal travel direction
+  const vdir = y2 > y1 ? 1 : -1;                        // vertical travel direction
+  const r = Math.min(14, Math.abs(midX - x1), Math.abs(midX - x2), Math.abs(y2 - y1) / 2);
+
+  // A→ elbow1 (down/up) → elbow2 → B, each corner a quadratic arc of radius r.
+  const d = [
+    `M${x1},${y1}`,
+    `L${midX - dir * r},${y1}`,
+    `Q${midX},${y1} ${midX},${y1 + vdir * r}`,
+    `L${midX},${y2 - vdir * r}`,
+    `Q${midX},${y2} ${midX + dir * r},${y2}`,
+    `L${x2},${y2}`,
+  ].join(' ');
+  return { d, mid: { x: midX, y: (y1 + y2) / 2 } };
 }
 
 function truncate(value, max) {
