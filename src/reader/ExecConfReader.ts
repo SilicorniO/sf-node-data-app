@@ -71,7 +71,8 @@ export class ExecConfReader {
       app.apiVersion,
       app.cleanOutputFolderBeforeExecution,
       app.deleteErrorFilesBeforeExecution,
-      app.queryApiBatchSize
+      app.queryApiBatchSize,
+      app.autoBulkThreshold
     );
   }
 

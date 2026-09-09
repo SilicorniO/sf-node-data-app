@@ -105,13 +105,16 @@ export const actionSchema = z.union([
 ]);
 
 const appConfigurationSchema = z.object({
-  processingType: z.enum(['api', 'bulk']).default('api'),
+  processingType: z.enum(['api', 'bulk', 'auto']).default('api'),
   bulkApiMaxWaitSec: z.number().positive().nullable().default(null),
   bulkApiPollIntervalSec: z.number().positive().nullable().default(null),
   apiVersion: trimmed.default('58.0'),
   cleanOutputFolderBeforeExecution: z.boolean().default(false),
   deleteErrorFilesBeforeExecution: z.boolean().default(false),
   queryApiBatchSize: z.number().int().min(200).max(2000).default(2000),
+  // Auto mode cutover: at or above this record count an action uses Bulk API v2,
+  // below it the synchronous API.
+  autoBulkThreshold: z.number().int().positive().default(10000),
 }).strict().default({
   processingType: 'api',
   bulkApiMaxWaitSec: null,
@@ -120,6 +123,7 @@ const appConfigurationSchema = z.object({
   cleanOutputFolderBeforeExecution: false,
   deleteErrorFilesBeforeExecution: false,
   queryApiBatchSize: 2000,
+  autoBulkThreshold: 10000,
 });
 
 const sheetSchema = z.object({

@@ -28,7 +28,8 @@ actions: [ ... ]            # ordered pipeline steps
 
 ```yaml
 appConfiguration:
-  processingType: "api"                 # "api" (sync, default) | "bulk" (Bulk API v2)
+  processingType: "api"                 # "api" (sync, default) | "bulk" (Bulk API v2) | "auto" (per-action by count)
+  autoBulkThreshold: 10000              # auto cutover: >= this many records -> bulk, else api
   apiVersion: "58.0"                    # SF API version (examples use "63.0")
   queryApiBatchSize: 2000               # 200..2000, Query page size
   bulkApiMaxWaitSec: null               # bulk job timeout (runtime default 300)

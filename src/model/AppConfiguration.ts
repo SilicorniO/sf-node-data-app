@@ -1,5 +1,7 @@
 // src/model/ImportConf.ts
-export type ProcessingType = "api" | "bulk";
+// "auto" picks between "api" and "bulk" per action at runtime based on record
+// count (see AutoModeSelector); autoBulkThreshold is the cutover point.
+export type ProcessingType = "api" | "bulk" | "auto";
 export class AppConfiguration {
   processingType: ProcessingType = "api";
   bulkApiMaxWaitSec: number | null;
@@ -8,6 +10,7 @@ export class AppConfiguration {
   cleanOutputFolderBeforeExecution: boolean;
   deleteErrorFilesBeforeExecution: boolean;
   queryApiBatchSize: number;
+  autoBulkThreshold: number;
   constructor(
     processingType: ProcessingType,
     bulkApiMaxWaitSec: number | null,
@@ -15,7 +18,8 @@ export class AppConfiguration {
     apiVersion: string,
     cleanOutputFolderBeforeExecution = false,
     deleteErrorFilesBeforeExecution = false,
-    queryApiBatchSize = 2000
+    queryApiBatchSize = 2000,
+    autoBulkThreshold = 10000
   ) {
     this.processingType = processingType;
     this.bulkApiMaxWaitSec = bulkApiMaxWaitSec;
@@ -24,5 +28,6 @@ export class AppConfiguration {
     this.cleanOutputFolderBeforeExecution = cleanOutputFolderBeforeExecution;
     this.deleteErrorFilesBeforeExecution = deleteErrorFilesBeforeExecution;
     this.queryApiBatchSize = queryApiBatchSize;
+    this.autoBulkThreshold = autoBulkThreshold;
   }
 }

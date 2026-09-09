@@ -103,6 +103,28 @@ describe('ActionProcessor write preparation', () => {
   });
 });
 
+describe('ActionProcessor auto write loader selection', () => {
+  const execConf = (threshold: number) =>
+    new ExecConf(new AppConfiguration('auto', null, null, '58.0', false, false, 2000, threshold), [], []);
+
+  it('picks the synchronous API loader below the threshold', () => {
+    const loader = (ActionProcessor as any).loader(execConf(10000), 9999);
+    expect(loader.constructor.name).toBe('SalesforceApiLoader');
+  });
+
+  it('picks the Bulk API loader at or above the threshold', () => {
+    const loader = (ActionProcessor as any).loader(execConf(10000), 10000);
+    expect(loader.constructor.name).toBe('SalesforceBulkApiLoader');
+  });
+
+  it('honours the configured processingType without consulting the count', () => {
+    const apiConf = new ExecConf(new AppConfiguration('api', null, null, '58.0'), [], []);
+    const bulkConf = new ExecConf(new AppConfiguration('bulk', null, null, '58.0'), [], []);
+    expect((ActionProcessor as any).loader(apiConf, 1_000_000).constructor.name).toBe('SalesforceApiLoader');
+    expect((ActionProcessor as any).loader(bulkConf, 1).constructor.name).toBe('SalesforceBulkApiLoader');
+  });
+});
+
 describe('resolveActionRange', () => {
   const actions = [{ name: 'Get Accounts' }, { name: 'Transform' }, { name: 'Insert Contacts' }];
 

@@ -243,8 +243,14 @@ are invalid.
 ### Application settings
 
 - `processingType`: `api` for synchronous Query API and sObject Collections
-(default), or `bulk` for Bulk API v2. Authentication is selected separately:
-environment credentials take precedence, with Salesforce CLI as fallback.
+(default), `bulk` for Bulk API v2, or `auto` to pick the best method per action
+based on record count. Authentication is selected separately: environment
+credentials take precedence, with Salesforce CLI as fallback.
+- `autoBulkThreshold`: record-count cutover used by `auto` (default `10000`).
+An action at or above this count uses Bulk API v2; below it, the synchronous
+API. For GET actions `auto` first runs a lightweight `SELECT COUNT()`; queries
+that cannot be rewritten to a count (aggregates, `GROUP BY`, `LIMIT`) stay on
+the synchronous API.
 - `bulkApiMaxWaitSec`: optional Bulk job timeout; default is 300 at runtime
 - `bulkApiPollIntervalSec`: optional Bulk polling interval; default is 5
 - `apiVersion`: Salesforce API version; defaults to `58.0`

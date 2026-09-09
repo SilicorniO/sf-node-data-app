@@ -101,6 +101,26 @@ actions: []
     expect(configuration.appConfiguration.deleteErrorFilesBeforeExecution).toBe(true);
   });
 
+  it('defaults the auto Bulk threshold to 10000', () => {
+    const configuration = ExecConfReader.parseConf(`
+appConfiguration:
+  processingType: api
+actions: []
+`);
+    expect(configuration.appConfiguration.autoBulkThreshold).toBe(10000);
+  });
+
+  it('parses auto mode with a custom Bulk threshold', () => {
+    const configuration = ExecConfReader.parseConf(`
+appConfiguration:
+  processingType: auto
+  autoBulkThreshold: 5000
+actions: []
+`);
+    expect(configuration.appConfiguration.processingType).toBe('auto');
+    expect(configuration.appConfiguration.autoBulkThreshold).toBe(5000);
+  });
+
   it('parses a custom Query API batch size', () => {
     const configuration = ExecConfReader.parseConf(`
 appConfiguration:

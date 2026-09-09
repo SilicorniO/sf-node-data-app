@@ -11,6 +11,7 @@ export const defaultState = () => ({
     bulkApiPollIntervalSec: '',
     apiVersion: '58.0',
     queryApiBatchSize: 2000,
+    autoBulkThreshold: 10000,
     cleanOutputFolderBeforeExecution: false,
     deleteErrorFilesBeforeExecution: false,
   },
@@ -67,7 +68,9 @@ function normalizeState(value = {}) {
     appConfiguration: {
       ...defaults.appConfiguration,
       ...(value.appConfiguration || {}),
-      processingType: value.appConfiguration?.processingType === 'bulk' ? 'bulk' : 'api',
+      processingType: ['bulk', 'auto'].includes(value.appConfiguration?.processingType)
+        ? value.appConfiguration.processingType
+        : 'api',
     },
     sheets: (value.sheets || []).map(sheet => ({
       id: sheet.id || uid(),

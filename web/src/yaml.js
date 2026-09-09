@@ -15,6 +15,11 @@ export function buildConfiguration(state) {
   if (queryBatchSize !== null && queryBatchSize !== 2000) {
     appConfiguration.queryApiBatchSize = queryBatchSize;
   }
+  // Only meaningful in auto mode; emit it when set and not the runtime default (10000).
+  const autoBulkThreshold = optionalPositiveNumber(app.autoBulkThreshold);
+  if (appConfiguration.processingType === 'auto' && autoBulkThreshold !== null && autoBulkThreshold !== 10000) {
+    appConfiguration.autoBulkThreshold = autoBulkThreshold;
+  }
   if (app.cleanOutputFolderBeforeExecution) appConfiguration.cleanOutputFolderBeforeExecution = true;
   if (app.deleteErrorFilesBeforeExecution) appConfiguration.deleteErrorFilesBeforeExecution = true;
 

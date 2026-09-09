@@ -85,6 +85,16 @@ describe('SalesforceApiLoader query status', () => {
     expect(logs.some(line => line.includes('batchSize 500'))).toBe(true);
   });
 
+  it('returns totalSize from a COUNT() query', async () => {
+    get.mockResolvedValue({ data: { totalSize: 4231, done: true, records: [] } });
+
+    const loader = new SalesforceApiLoader(new AppConfiguration('auto', null, null, '58.0'));
+    const count = await loader.count('https://example.my.salesforce.com', 'token', 'SELECT COUNT() FROM Account');
+
+    expect(count).toBe(4231);
+    expect(get).toHaveBeenCalledWith(expect.stringContaining('/query?q='));
+  });
+
   it('logs a heartbeat while a synchronous query page is still in flight', async () => {
     vi.useFakeTimers();
     get.mockImplementation(() => new Promise(resolve => {

@@ -152,8 +152,15 @@ class SfGeneratorApp extends HTMLElement {
           <select data-app="processingType">
             <option value="api" ${app.processingType === 'api' ? 'selected' : ''}>Synchronous API</option>
             <option value="bulk" ${app.processingType === 'bulk' ? 'selected' : ''}>Bulk API v2 — large data sets</option>
+            <option value="auto" ${app.processingType === 'auto' ? 'selected' : ''}>Auto — best method per action</option>
           </select>
         </label>
+        ${app.processingType === 'auto' ? `
+        <label class="field">
+          <span>Auto Bulk threshold</span>
+          <input data-app="autoBulkThreshold" type="number" min="1" value="${esc(app.autoBulkThreshold ?? 10000)}" placeholder="10000">
+          <small class="hint">Records at or above this count use Bulk API v2; below it, the synchronous API.</small>
+        </label>` : ''}
         <label class="field">
           <span>Salesforce API version <b>*</b></span>
           <input data-app="apiVersion" value="${esc(app.apiVersion)}" placeholder="58.0">
@@ -450,7 +457,9 @@ class SfGeneratorApp extends HTMLElement {
     }));
     this.querySelectorAll('[data-app]').forEach(input => input.addEventListener('input', () => {
       state.appConfiguration[input.dataset.app] = input.type === 'checkbox' ? input.checked : input.value;
-      notify('input');
+      // Switching processingType shows/hides mode-specific fields (e.g. the auto
+      // threshold), so re-render the panel rather than only refreshing the preview.
+      notify(input.dataset.app === 'processingType' ? 'structure' : 'input');
     }));
     this.querySelectorAll('[data-toggle-sheet]').forEach(button => button.addEventListener('click', () => {
       const sheet = state.sheets[Number(button.dataset.toggleSheet)];

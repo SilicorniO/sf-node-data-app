@@ -82,6 +82,19 @@ export class SalesforceApiLoader implements SalesforceDataLoader {
     };
   }
 
+  // Runs a "SELECT COUNT() ..." query and returns the matching record count.
+  // COUNT() responses carry no records; the count lives in `totalSize`.
+  async count(instanceUrl: string, accessToken: string, countQuery: string): Promise<number> {
+    const axiosInstance = this.getAxiosInstance(instanceUrl, accessToken);
+    try {
+      const response = await axiosInstance.get(`/query?q=${encodeURIComponent(countQuery)}`);
+      const total = (response.data as any)?.totalSize;
+      return typeof total === 'number' ? total : 0;
+    } catch (error: any) {
+      throw new Error(`Error during Query API COUNT: ${this.readApiErrors(error)}`);
+    }
+  }
+
   async write(
     instanceUrl: string,
     accessToken: string,

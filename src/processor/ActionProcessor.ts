@@ -9,6 +9,7 @@ import { TransformAction } from '../model/TransformAction';
 import { UpdateAction } from '../model/UpdateAction';
 import { UpsertAction } from '../model/UpsertAction';
 import { WriteAction } from '../model/WriteAction';
+import { buildCountQuery, decideByCount } from '../salesforce/AutoModeSelector';
 import { SalesforceApiLoader } from '../salesforce/SalesforceApiLoader';
 import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
 import { SalesforceBulkApiLoader } from '../salesforce/SalesforceBulkApiLoader';
@@ -279,9 +280,31 @@ export class ActionProcessor {
 
   private static async executeGet(execConf: ExecConf, action: GetAction, sheets: SheetRegistry): Promise<void> {
     const connection = await this.connection();
+    const app = execConf.appConfiguration;
+    // In "auto" mode a GET has no known count up front, so run a cheap COUNT()
+    // to choose the method. If the query cannot be rewritten to COUNT() (e.g. it
+    // aggregates or is capped by LIMIT), stay on the synchronous API.
+    let processingType = app.processingType;
+    if (processingType === 'auto') {
+      const countQuery = buildCountQuery(action.query);
+      if (!countQuery) {
+        console.log('        Auto: query not countable (aggregate/limit) -> synchronous API.');
+        processingType = 'api';
+      } else {
+        const count = await new SalesforceApiLoader(app).count(
+          connection.instanceUrl,
+          connection.accessToken,
+          countQuery
+        );
+        const decision = decideByCount(count, app.autoBulkThreshold);
+        console.log(`        Auto: ${decision.reason}.`);
+        processingType = decision.method;
+      }
+    }
+
     let result: DataSheet;
-    if (execConf.appConfiguration.processingType === 'api') {
-      result = await new SalesforceApiLoader(execConf.appConfiguration).query(
+    if (processingType === 'api') {
+      result = await new SalesforceApiLoader(app).query(
         connection.instanceUrl,
         connection.accessToken,
         action.query,
@@ -289,7 +312,7 @@ export class ActionProcessor {
       );
     } else {
       try {
-        result = await new SalesforceBulkApiLoader(execConf.appConfiguration).query(
+        result = await new SalesforceBulkApiLoader(app).query(
           connection.instanceUrl,
           connection.accessToken,
           action.query,
@@ -299,9 +322,9 @@ export class ActionProcessor {
         if (!isBulkQueryUnsupported(error)) throw error;
         console.warn(
           '        Query: Bulk API v2 does not support a selected field; '
-          + `falling back to the synchronous Query API (batchSize ${execConf.appConfiguration.queryApiBatchSize}).`
+          + `falling back to the synchronous Query API (batchSize ${app.queryApiBatchSize}).`
         );
-        result = await new SalesforceApiLoader(execConf.appConfiguration).query(
+        result = await new SalesforceApiLoader(app).query(
           connection.instanceUrl,
           connection.accessToken,
           action.query,
@@ -439,7 +462,7 @@ export class ActionProcessor {
 
     if (request.request.rows.length > 0) {
       const connection = await this.connection();
-      apiResults = await this.loader(execConf).write(
+      apiResults = await this.loader(execConf, request.request.rows.length).write(
         connection.instanceUrl,
         connection.accessToken,
         request.request
@@ -571,10 +594,21 @@ export class ActionProcessor {
     });
   }
 
-  private static loader(execConf: ExecConf): SalesforceDataLoader {
-    return execConf.appConfiguration.processingType === 'api'
-      ? new SalesforceApiLoader(execConf.appConfiguration)
-      : new SalesforceBulkApiLoader(execConf.appConfiguration);
+  // Selects the loader for a write. In "auto" mode the known input row count
+  // decides between the synchronous API and Bulk API v2; otherwise the
+  // configured processingType is used directly.
+  private static loader(execConf: ExecConf, rowCount: number): SalesforceDataLoader {
+    const app = execConf.appConfiguration;
+    if (app.processingType === 'auto') {
+      const decision = decideByCount(rowCount, app.autoBulkThreshold);
+      console.log(`        Auto: ${decision.reason}.`);
+      return decision.method === 'api'
+        ? new SalesforceApiLoader(app)
+        : new SalesforceBulkApiLoader(app);
+    }
+    return app.processingType === 'api'
+      ? new SalesforceApiLoader(app)
+      : new SalesforceBulkApiLoader(app);
   }
 
   private static async connection(): Promise<{ instanceUrl: string; accessToken: string }> {
