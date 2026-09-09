@@ -21,6 +21,7 @@ import {
 import { DataSheetProcessor } from './processor/DataSheetProcessor';
 import { OutputCleaner } from './processor/OutputCleaner';
 import { SheetRegistry } from './processor/SheetRegistry';
+import { startUiServer } from './daemon/Server';
 
 const CSV_FILE_SUFFIX = '.csv';
 const EXCEL_FILE_SUFFIXES = ['.xlsx', '.xls', '.xlsm', '.xlsb'];
@@ -86,8 +87,42 @@ function resolveInputFiles(options: {
   return { excelFiles, csvFiles };
 }
 
+/**
+ * Starts the UI daemon instead of running a one-shot pipeline. Only `--ui` and
+ * `--port` are meaningful here; pipeline flags are ignored because the browser
+ * supplies the configuration, inputs, and auth per run.
+ */
+function runUiMode(): void {
+  const program = new Command()
+    .option('--ui', 'Start the browser UI daemon instead of running a pipeline')
+    .option('-p, --port <number>', 'Port for the UI daemon (default 3111)')
+    .allowUnknownOption(true)
+    .parse(process.argv);
+  const options = program.opts();
+  const port = options.port !== undefined
+    ? Number(options.port)
+    : process.env.PORT !== undefined
+      ? Number(process.env.PORT)
+      : undefined;
+  if (port !== undefined && (!Number.isInteger(port) || port <= 0)) {
+    console.error(`Invalid --port value: ${options.port ?? process.env.PORT}`);
+    process.exitCode = 1;
+    return;
+  }
+  // Use the folder the command was executed in. `npm run` rewrites process.cwd()
+  // to the package root but preserves the real invocation directory in INIT_CWD,
+  // so prefer that when present (harmless for a direct `sfdata --ui`).
+  const cwd = process.env.INIT_CWD || process.cwd();
+  startUiServer({ port, cwd });
+}
+
 async function main(): Promise<void> {
   dotenv.config();
+  // `--ui` switches to daemon mode, where --confFile is not required.
+  if (process.argv.includes('--ui')) {
+    runUiMode();
+    return;
+  }
   const program = new Command()
     .requiredOption('-c, --confFile <path>', 'Path to the YAML configuration file')
     .option('-e, --excelFile <path>', 'Path to an Excel input file')

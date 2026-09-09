@@ -220,7 +220,12 @@ Phases: load+validate YAML → prepare output folder → index inputs → field 
 output) → flush remaining sheets. Exit code 1 on failure; accepted row-errors still exit 0.
 
 There is also an **offline YAML generator UI**: `npm run build:web` →
-`dist-web/execconf_generator.html` (forms + validation, does not execute anything).
+`dist-web/execconf_generator.html` (forms + validation). Opened as a `file://`
+document it only authors config and does not execute anything; served by the
+`sfdata --ui` daemon it can also run the pipeline from a browser. **The `--ui`
+daemon is a human convenience — as an AI you do not need it.** Write `conf.yaml`
+and the transform script directly to disk and run the CLI with `node dist/Index.js`
+(or `npx ts-node src/Index.ts`) as in §4/§5; that is the supported path for you.
 Each transform action edits its function in an in-browser editor; **Download** writes
 both `conf.yaml` and the shared script file, and **importing** them together (select the
 `.yaml` and the shared `.js` at once) preloads every transform's code automatically,

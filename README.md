@@ -42,9 +42,56 @@ direct-save, and download support
 - validated YAML import (comments and formatting are normalized)
 - automatic local draft persistence and confirmed reset
 
-The generator does not execute Salesforce operations. The Node CLI uses
-environment credentials when configured; otherwise it obtains credentials from
-the default org currently selected in Salesforce CLI.
+By default the generator only authors configuration. It can also **run the
+pipeline directly** when launched through the UI daemon (see below).
+
+## Run from the generator (`--ui`)
+
+Start the built CLI in UI mode from the folder that holds your inputs:
+
+```bash
+sfdata --ui                 # serves the generator on http://localhost:3111
+sfdata --ui --port 4000     # or PORT=4000 sfdata --ui
+```
+
+The daemon uses **the folder where the command was executed** as its working
+folder — it reads inputs, writes `conf.yaml`/`scripts.js`, and produces `output/`
+there. Run it from the project folder that holds your inputs.
+
+If that folder already contains a `conf.yaml` (and optionally `scripts.js`), the
+generator loads it automatically on open, so you continue editing the on-disk
+configuration. The on-disk files take precedence over any autosaved browser draft.
+
+During development: `npm run ui` (builds the CLI + generator, then starts the
+daemon). `npm run` reports the repo root as the process directory, so the daemon
+falls back to `INIT_CWD` — the folder you invoked `npm run ui` from — for its
+working folder. Open the printed `http://localhost:<port>` in a browser — the served page
+is same-origin with the daemon, so no CORS setup is needed. Without `--ui` the CLI
+behaves exactly as before (a one-shot pipeline run); in `--ui` mode only `--port`
+matters and `--confFile` is not required.
+
+Open the **Run** tab in the generator to execute the current configuration:
+
+- Authentication is resolved from the local environment, in order:
+  1. a usable credential in a `.env` file in the daemon's folder,
+  2. an authorized Salesforce CLI org (pick one from the **org picker**; a fresh
+     access token is fetched for it at run time),
+  3. a **pasted** bearer token + instance URL (also used when a picked org's token
+     is expired or the CLI is unavailable). Pasted credentials are kept only for the
+     browser session and are never written to disk.
+- Optional **From / To** pickers run a partial range (same as `--fromTask` /
+  `--toTask`).
+- On Run, the daemon writes `conf.yaml` (and `scripts.js` only when a transform
+  action exists) into its folder and runs the CLI with `--inputFolder .
+  --outputFolder ./output`, exactly as if you had saved the files and run the CLI
+  by hand. Only one run executes at a time.
+- The generator streams the CLI's six-phase log live, then shows a success/failure
+  summary and the list of produced output files with row counts. Output CSVs stay
+  on disk in the daemon's `output` folder (they can be large, so their contents are
+  not sent back to the browser).
+
+The Node CLI uses environment credentials when configured; otherwise it obtains
+credentials from the default org currently selected in Salesforce CLI.
 
 Run from TypeScript:
 

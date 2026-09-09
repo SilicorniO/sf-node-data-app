@@ -19,7 +19,8 @@
     "build": "npx tsc",
     "build:executables": "npm run build && pkg .",
     "build:web": "node web/build.mjs",
-    "dev:web": "npm run build:web && npx serve dist-web -l 3001 --no-port-switching"
+    "dev:web": "npm run build:web && npx serve dist-web -l 3001 --no-port-switching",
+    "ui": "npm run build && npm run build:web && node dist/Index.js --ui"
   },
   "keywords": [],
   "author": "",

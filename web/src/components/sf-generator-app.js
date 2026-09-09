@@ -4,6 +4,7 @@ import { ACTION_TYPES, actionDescription, createAction, sheetCatalog } from '../
 import { notify, replaceState, resetState, restoreDraft, state, subscribe, uid } from '../state.js';
 import { analyzeSharedScript, buildSharedScript, generateYaml, parseSharedScript, parseYaml } from '../yaml.js';
 import { esc, toast } from '../utils.js';
+import { checkDaemon, daemonPossible, fetchAuth, fetchConfig, loadSession, saveSession, runPipeline } from '../execute.js';
 import './sf-action-modal.js';
 import './sf-diagram-panel.js';
 
@@ -14,6 +15,20 @@ class SfGeneratorApp extends HTMLElement {
     this.validation = { valid: true, issues: [] };
     this.unsubscribe = null;
     this.dragIndex = null;
+    // Execution (Run) state — only meaningful when the UI daemon is reachable.
+    this.daemon = null;         // /status payload, or null when unreachable
+    this.auth = null;           // /auth payload (env credential, sf orgs)
+    this.run = {
+      source: 'sf',
+      org: '',
+      running: false,
+      logLines: [],
+      result: null,
+      error: '',
+    };
+    const session = loadSession();
+    this.run.instanceUrl = session.instanceUrl || '';
+    this.run.accessToken = session.accessToken || '';
   }
 
   connectedCallback() {
@@ -22,6 +37,36 @@ class SfGeneratorApp extends HTMLElement {
       if (reason === 'input') this.refreshPreview();
       else this.render();
     });
+    this.render();
+    this.detectDaemon();
+  }
+
+  // Detects the daemon once, then loads the local auth environment so the Run tab
+  // can offer the org picker / paste-token flow.
+  async detectDaemon() {
+    if (!daemonPossible()) return;
+    const status = await checkDaemon();
+    if (!status) return;
+    this.daemon = status;
+    // Disk wins: when the daemon's folder already has a conf.yaml, load it (and its
+    // scripts.js) through the normal import path, replacing the autosaved draft.
+    try {
+      const config = await fetchConfig();
+      if (config.hasConf && config.yaml) {
+        this.importText(config.yaml, config.script || '', 'Loaded conf.yaml from the daemon folder');
+      }
+    } catch {
+      /* no config on disk, or unreadable — keep the current draft */
+    }
+    try {
+      this.auth = await fetchAuth();
+      this.run.source = this.auth.recommendedSource || 'paste';
+      const def = (this.auth.orgs || []).find(org => org.isDefault) || (this.auth.orgs || [])[0];
+      if (def) this.run.org = def.alias || def.username;
+    } catch {
+      this.auth = { envCredential: null, sfAvailable: false, orgs: [], recommendedSource: 'paste' };
+      this.run.source = 'paste';
+    }
     this.render();
   }
 
@@ -54,7 +99,7 @@ class SfGeneratorApp extends HTMLElement {
         ${this.tabs()}
       </nav>
 
-      <main class="workspace ${state.activeTab === 'diagram' ? 'workspace-full' : ''}">
+      <main class="workspace ${state.activeTab === 'diagram' || state.activeTab === 'run' ? 'workspace-full' : ''}">
         <section class="editor-pane ${state.activeTab === 'diagram' ? 'editor-pane-diagram' : ''}">
           <nav class="editor-tabs" aria-label="Configuration sections">${this.tabs(false)}</nav>
           <div class="editor-scroll ${state.activeTab === 'diagram' ? 'editor-scroll-diagram' : ''}">
@@ -63,9 +108,10 @@ class SfGeneratorApp extends HTMLElement {
             ${state.activeTab === 'actions' ? this.actionsPanel() : ''}
             ${state.activeTab === 'preview' ? this.previewPanel(true) : ''}
             ${state.activeTab === 'diagram' ? '<sf-diagram-panel></sf-diagram-panel>' : ''}
+            ${state.activeTab === 'run' ? this.runPanel() : ''}
           </div>
         </section>
-        ${state.activeTab === 'diagram' ? '' : `<aside class="preview-pane">${this.previewPanel(false)}</aside>`}
+        ${state.activeTab === 'diagram' || state.activeTab === 'run' ? '' : `<aside class="preview-pane">${this.previewPanel(false)}</aside>`}
       </main>
 
       <sf-action-modal></sf-action-modal>
@@ -76,12 +122,14 @@ class SfGeneratorApp extends HTMLElement {
   }
 
   tabs(includePreview = true) {
+    let n = 0;
     const items = [
-      ['app', '1', 'App'],
-      ['sheets', '2', `Sheets ${state.sheets.length ? `(${state.sheets.length})` : ''}`],
-      ['actions', '3', `Actions ${state.actions.length ? `(${state.actions.length})` : ''}`],
-      ...(includePreview ? [['preview', '4', 'Preview']] : []),
-      ['diagram', includePreview ? '5' : '4', 'Diagram'],
+      ['app', String(++n), 'App'],
+      ['sheets', String(++n), `Sheets ${state.sheets.length ? `(${state.sheets.length})` : ''}`],
+      ['actions', String(++n), `Actions ${state.actions.length ? `(${state.actions.length})` : ''}`],
+      ...(includePreview ? [['preview', String(++n), 'Preview']] : []),
+      ['diagram', String(++n), 'Diagram'],
+      ...(this.daemon ? [['run', String(++n), '▶ Run']] : []),
     ];
     return items.map(([value, number, label]) => `
       <button class="tab ${state.activeTab === value ? 'active' : ''}" data-tab="${value}">
@@ -282,6 +330,119 @@ class SfGeneratorApp extends HTMLElement {
     </section>`;
   }
 
+  runPanel() {
+    const valid = this.validation.valid;
+    const auth = this.auth || { orgs: [], sfAvailable: false, envCredential: null };
+    const run = this.run;
+    const orgs = auth.orgs || [];
+    const actions = state.actions;
+
+    const sourceOption = (value, label, disabled = false) => `
+      <label class="run-source ${run.source === value ? 'active' : ''} ${disabled ? 'disabled' : ''}">
+        <input type="radio" name="run-source" value="${value}" ${run.source === value ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+        <span>${label}</span>
+      </label>`;
+
+    const orgPicker = `
+      <label class="field">
+        <span>Salesforce org</span>
+        <select data-run-org ${run.source === 'sf' ? '' : 'disabled'}>
+          ${orgs.map(org => {
+            const key = org.alias || org.username;
+            const label = org.alias ? `${org.alias} — ${org.username}` : org.username;
+            return `<option value="${esc(key)}" ${run.org === key ? 'selected' : ''}>${esc(label)}${org.isDefault ? ' (default)' : ''}</option>`;
+          }).join('')}
+        </select>
+        <small class="hint">A fresh access token is fetched from the Salesforce CLI for the selected org at run time.</small>
+      </label>`;
+
+    const pasteFields = `
+      <div class="run-paste ${run.source === 'paste' ? '' : 'hidden'}">
+        <label class="field">
+          <span>Instance URL</span>
+          <input data-run-instance value="${esc(run.instanceUrl || '')}" placeholder="https://your-domain.my.salesforce.com">
+        </label>
+        <label class="field">
+          <span>Access token</span>
+          <input data-run-token type="password" value="${esc(run.accessToken || '')}" placeholder="Bearer access token">
+          <small class="hint">Kept only for this browser session; never written to disk or the config draft.</small>
+        </label>
+      </div>`;
+
+    return `<section class="panel-section run-panel">
+      <div class="section-heading">
+        <div><p class="eyebrow">Execute</p><h2>Run pipeline</h2></div>
+        <span class="daemon-status ok">● Daemon connected${this.daemon?.cwd ? ` · ${esc(this.daemon.cwd)}` : ''}</span>
+      </div>
+      <p class="section-intro">Runs the pipeline in the daemon's folder. The current <code>conf.yaml</code>${state.actions.some(a => a.type === 'transform') ? ' and <code>scripts.js</code>' : ''} are written before execution, exactly as if you had saved and run the CLI there.</p>
+
+      <div class="card run-config">
+        <div class="run-field-group">
+          <span class="run-label">Authentication</span>
+          <div class="run-sources">
+            ${sourceOption('env', auth.envCredential ? `.env (${auth.envCredential})` : '.env file', !auth.envCredential)}
+            ${sourceOption('sf', 'Salesforce CLI org', !orgs.length)}
+            ${sourceOption('paste', 'Paste a token')}
+          </div>
+        </div>
+        ${orgs.length ? orgPicker : ''}
+        ${pasteFields}
+
+        <div class="run-field-group">
+          <span class="run-label">Action range (optional)</span>
+          <div class="form-grid two">
+            <label class="field">
+              <span>From action</span>
+              <select data-run-from>
+                <option value="">First action</option>
+                ${actions.map((a, i) => `<option value="${esc(a.name)}" ${run.fromTask === a.name ? 'selected' : ''}>${i + 1}. ${esc(a.name || 'Unnamed')}</option>`).join('')}
+              </select>
+            </label>
+            <label class="field">
+              <span>To action</span>
+              <select data-run-to>
+                <option value="">Last action</option>
+                ${actions.map((a, i) => `<option value="${esc(a.name)}" ${run.toTask === a.name ? 'selected' : ''}>${i + 1}. ${esc(a.name || 'Unnamed')}</option>`).join('')}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="run-actions">
+          <button class="button primary" data-run-start ${!valid || run.running ? 'disabled' : ''}>
+            ${run.running ? 'Running…' : '▶ Run pipeline'}
+          </button>
+          ${valid ? '' : '<span class="field-error">Fix configuration issues before running.</span>'}
+        </div>
+      </div>
+
+      ${run.error ? `<div class="form-error section-errors">${esc(run.error)}</div>` : ''}
+
+      ${run.logLines.length || run.running ? `
+        <div class="card run-console">
+          <div class="run-console-head">
+            <span>Execution log</span>
+            ${run.running ? '<span class="run-spinner">● live</span>' : ''}
+          </div>
+          <pre class="run-log"><code>${esc(run.logLines.join('\n'))}</code></pre>
+        </div>` : ''}
+
+      ${run.result ? `
+        <div class="card run-result ${run.result.status === 'success' ? 'ok' : 'bad'}">
+          <h3>${run.result.status === 'success' ? '✓ Pipeline finished successfully' : `✗ Pipeline failed (exit ${run.result.exitCode})`}</h3>
+          ${run.result.outputs?.length ? `
+            <table class="run-output-table">
+              <thead><tr><th>Output file</th><th>Rows</th></tr></thead>
+              <tbody>
+                ${run.result.outputs.map(o => `<tr><td>${esc(o.name)}</td><td>${o.rows}</td></tr>`).join('')}
+              </tbody>
+            </table>
+            <small class="hint">Files were written to the output folder in the daemon's working directory.</small>
+          ` : '<p>No output files were reported.</p>'}
+        </div>` : ''}
+    </section>`;
+  }
+
   bind() {
     this.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => {
       state.activeTab = button.dataset.tab;
@@ -410,7 +571,116 @@ class SfGeneratorApp extends HTMLElement {
         notify('tab');
       }
     }));
+    this.bindRunPanel();
     this.querySelector('sf-diagram-panel')?.update(state);
+  }
+
+  bindRunPanel() {
+    this.querySelectorAll('input[name="run-source"]').forEach(input => input.addEventListener('change', () => {
+      this.run.source = input.value;
+      this.render();
+    }));
+    const orgSelect = this.querySelector('[data-run-org]');
+    orgSelect?.addEventListener('change', () => { this.run.org = orgSelect.value; });
+    const instance = this.querySelector('[data-run-instance]');
+    instance?.addEventListener('input', () => {
+      this.run.instanceUrl = instance.value;
+      saveSession({ instanceUrl: this.run.instanceUrl, accessToken: this.run.accessToken });
+    });
+    const token = this.querySelector('[data-run-token]');
+    token?.addEventListener('input', () => {
+      this.run.accessToken = token.value;
+      saveSession({ instanceUrl: this.run.instanceUrl, accessToken: this.run.accessToken });
+    });
+    const from = this.querySelector('[data-run-from]');
+    from?.addEventListener('change', () => { this.run.fromTask = from.value || undefined; });
+    const to = this.querySelector('[data-run-to]');
+    to?.addEventListener('change', () => { this.run.toTask = to.value || undefined; });
+    this.querySelector('[data-run-start]')?.addEventListener('click', () => this.startRun());
+  }
+
+  async startRun() {
+    if (this.run.running) return;
+    const result = generateYaml(state);
+    if (!result.valid) {
+      toast('Fix configuration issues before running.', 'warning');
+      return;
+    }
+    const hasTransform = state.actions.some(action => action.type === 'transform');
+
+    // Build the auth payload from the selected source.
+    const auth = { source: this.run.source };
+    if (this.run.source === 'sf') {
+      if (!this.run.org) { toast('Pick a Salesforce org first.', 'warning'); return; }
+      auth.org = this.run.org;
+    } else if (this.run.source === 'paste') {
+      if (!this.run.instanceUrl || !this.run.accessToken) {
+        toast('Enter an instance URL and access token.', 'warning');
+        return;
+      }
+      auth.instanceUrl = this.run.instanceUrl;
+      auth.accessToken = this.run.accessToken;
+    }
+
+    // Confirm before writing files and hitting the org.
+    const host = this.confirmHost(auth);
+    const rangeText = this.run.fromTask || this.run.toTask
+      ? ` (range: ${this.run.fromTask || 'first'} → ${this.run.toTask || 'last'})`
+      : '';
+    if (!confirm(`Run ${state.actions.length} action(s)${rangeText} against ${host}?\n\nconf.yaml${hasTransform ? ' and scripts.js' : ''} will be overwritten in the daemon's folder.`)) {
+      return;
+    }
+
+    this.run.running = true;
+    this.run.logLines = [];
+    this.run.result = null;
+    this.run.error = '';
+    this.render();
+
+    const appendLine = line => {
+      this.run.logLines.push(line);
+      const log = this.querySelector('.run-log code');
+      if (log) {
+        log.textContent = this.run.logLines.join('\n');
+        log.parentElement.scrollTop = log.parentElement.scrollHeight;
+      }
+    };
+
+    try {
+      const runResult = await runPipeline(
+        {
+          yaml: result.yaml,
+          script: hasTransform ? buildSharedScript(state) : undefined,
+          hasTransform,
+          auth,
+          fromTask: this.run.fromTask,
+          toTask: this.run.toTask,
+        },
+        { onLine: appendLine, onResult: res => { this.run.result = res; } }
+      );
+      this.run.result = runResult || this.run.result;
+    } catch (error) {
+      this.run.error = error.message;
+      if (error.needsToken) {
+        this.run.source = 'paste';
+        toast('That org needs a fresh login. Paste a token instead.', 'warning', 6000);
+      }
+    } finally {
+      this.run.running = false;
+      this.render();
+    }
+  }
+
+  confirmHost(auth) {
+    if (auth.source === 'paste' && auth.instanceUrl) {
+      try { return new URL(auth.instanceUrl).host; } catch { return auth.instanceUrl; }
+    }
+    if (auth.source === 'sf') {
+      const org = (this.auth?.orgs || []).find(o => (o.alias || o.username) === auth.org);
+      if (org) { try { return new URL(org.instanceUrl).host; } catch { return org.instanceUrl; } }
+      return auth.org;
+    }
+    return 'the .env-configured org';
   }
 
   refreshPreview() {
@@ -614,7 +884,7 @@ class SfGeneratorApp extends HTMLElement {
     }
   }
 
-  importText(text, scriptText = '') {
+  importText(text, scriptText = '', successMessage = 'Configuration imported and normalized') {
     if (!text.trim()) {
       toast('Paste YAML or choose a file first', 'warning');
       return;
@@ -623,7 +893,7 @@ class SfGeneratorApp extends HTMLElement {
       const configuration = parseYaml(text);
       replaceState(configuration, 'import');
       this.applySharedScript(scriptText);
-      toast('Configuration imported and normalized');
+      toast(successMessage);
     } catch (error) {
       toast(`Import failed: ${error.message}`, 'error', 6000);
     }

@@ -283,3 +283,44 @@ sf-diagram-panel { flex: 1; min-width: 0; display: flex; }
   .modal-backdrop { padding: 0; place-items: stretch; }
   .modal { min-height: 100vh; max-height: none; border-radius: 0; }
 }
+
+/* ── Run panel ─────────────────────────────────────────────────────────────── */
+.daemon-status { font-size: 13px; font-weight: 600; }
+.daemon-status.ok { color: var(--success); }
+.run-config { display: flex; flex-direction: column; gap: 18px; }
+.run-field-group { display: flex; flex-direction: column; gap: 8px; }
+.run-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.run-sources { display: flex; gap: 10px; flex-wrap: wrap; }
+.run-source {
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+  background: var(--surface-soft); font-size: 14px;
+}
+.run-source.active { border-color: var(--primary); background: var(--bg); }
+.run-source.disabled { opacity: 0.45; cursor: not-allowed; }
+.run-source input { accent-color: var(--primary); }
+.run-paste { display: flex; flex-direction: column; gap: 12px; }
+.run-paste.hidden { display: none; }
+.run-actions { display: flex; align-items: center; gap: 14px; }
+.run-console { margin-top: 16px; }
+.run-console-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 600; margin-bottom: 8px;
+}
+.run-spinner { color: var(--success); font-size: 13px; animation: run-pulse 1.4s ease-in-out infinite; }
+@keyframes run-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.run-log {
+  max-height: 420px; overflow: auto; margin: 0;
+  background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+.run-result { margin-top: 16px; border-left: 4px solid var(--border); }
+.run-result.ok { border-left-color: var(--success); }
+.run-result.bad { border-left-color: var(--danger); }
+.run-result h3 { margin: 0 0 12px; }
+.run-output-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.run-output-table th, .run-output-table td {
+  text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border);
+}
+.run-output-table th:last-child, .run-output-table td:last-child { text-align: right; width: 90px; }
