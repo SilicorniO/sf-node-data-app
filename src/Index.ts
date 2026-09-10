@@ -129,7 +129,7 @@ async function main(): Promise<void> {
     .option('-o, --outputFolder <path>', 'Folder where output CSV files are written', './')
     .option('-v, --csvFiles <paths...>', 'Paths to CSV input files')
     .option('-i, --inputFolder <path>', 'Folder scanned for all CSV and Excel input files')
-    .option('-s, --scriptFile <path>', 'Path to the shared CommonJS transform script (required if any transform action exists)')
+    .option('-s, --scriptFile <path>', 'Path to the shared CommonJS script for transform and check actions (required if any exist)')
     .option('--fromTask <nameOrIndex>', 'Start execution at this action name or 1-based index')
     .option('--toTask <nameOrIndex>', 'Stop execution after this action name or 1-based index')
     .parse(process.argv);
@@ -272,7 +272,8 @@ async function main(): Promise<void> {
     const selectedActions = actionRange!.end < actionRange!.start
       ? []
       : configuration.actions.slice(actionRange!.start, actionRange!.end + 1);
-    const requiresSalesforce = selectedActions.some(action => action.type !== 'transform');
+    const offlineActionTypes = new Set(['transform', 'check', 'merge']);
+    const requiresSalesforce = selectedActions.some(action => !offlineActionTypes.has(action.type));
     const authentication = configureSalesforceAuthentication(requiresSalesforce);
     console.log(`      Authentication: ${authentication}.`);
     if (requiresSalesforce) {

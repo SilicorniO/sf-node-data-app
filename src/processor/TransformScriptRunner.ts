@@ -1,4 +1,5 @@
 import { TransformAction } from '../model/TransformAction';
+import { CheckAction } from '../model/CheckAction';
 import { DataSheet } from '../model/DataSheet';
 import { SheetRegistry } from './SheetRegistry';
 
@@ -13,6 +14,16 @@ export interface TransformContext {
   lookupAll(sheetName: string, matchField: string, value: string): TransformRow[];
 }
 
+/**
+ * A check function receives its declared input sheets as a map keyed by sheet name
+ * and returns whether the check passes. It shares the transform context (lookup /
+ * lookupAll) so it can also cross-reference other sheets.
+ */
+export type CheckFunction = (
+  sheets: Record<string, DataSheet>,
+  context: TransformContext
+) => boolean;
+
 export interface TransformResult {
   outputRows: TransformRow[];
   errorRows: TransformRow[];
@@ -21,30 +32,68 @@ export interface TransformResult {
 
 export class TransformScriptRunner {
   private readonly functions = new Map<string, TransformFunction>();
+  private readonly checkFunctions = new Map<string, CheckFunction>();
+  // Cache of loaded script modules keyed by absolute file path, shared between the
+  // transform and check preflight passes so a single file is required only once.
+  private readonly modules = new Map<string, Record<string, unknown>>();
 
   preflight(actions: TransformAction[]): void {
-    const modules = new Map<string, Record<string, unknown>>();
     for (const action of actions) {
-      let exported = modules.get(action.scriptFile);
-      if (!exported) {
-        try {
-          const loaded = require(action.scriptFile);
-          const resolved = loaded?.default ?? loaded;
-          if (!resolved || typeof resolved !== 'object') {
-            throw new Error('the module must export an object keyed by action name');
-          }
-          exported = resolved as Record<string, unknown>;
-          modules.set(action.scriptFile, exported);
-        } catch (error: any) {
-          throw new Error(`Unable to load transform script file "${action.scriptFile}" for action "${action.name}": ${error.message}`);
-        }
-      }
-      const transform = exported[action.name];
-      if (typeof transform !== 'function') {
-        throw new Error(`Transform script file "${action.scriptFile}" does not export a function for action "${action.name}".`);
-      }
-      this.functions.set(action.name, transform as TransformFunction);
+      const fn = this.loadFunction(action.scriptFile, action.name, 'Transform');
+      this.functions.set(action.name, fn as TransformFunction);
     }
+  }
+
+  preflightChecks(actions: CheckAction[]): void {
+    for (const action of actions) {
+      const fn = this.loadFunction(action.scriptFile, action.name, 'Check');
+      this.checkFunctions.set(action.name, fn as CheckFunction);
+    }
+  }
+
+  // Loads (once) the script module and returns the function exported under `actionName`.
+  private loadFunction(scriptFile: string, actionName: string, kind: 'Transform' | 'Check'): Function {
+    let exported = this.modules.get(scriptFile);
+    if (!exported) {
+      try {
+        const loaded = require(scriptFile);
+        const resolved = loaded?.default ?? loaded;
+        if (!resolved || typeof resolved !== 'object') {
+          throw new Error('the module must export an object keyed by action name');
+        }
+        exported = resolved as Record<string, unknown>;
+        this.modules.set(scriptFile, exported);
+      } catch (error: any) {
+        throw new Error(`Unable to load ${kind.toLowerCase()} script file "${scriptFile}" for action "${actionName}": ${error.message}`);
+      }
+    }
+    const fn = exported[actionName];
+    if (typeof fn !== 'function') {
+      throw new Error(`${kind} script file "${scriptFile}" does not export a function for action "${actionName}".`);
+    }
+    return fn as Function;
+  }
+
+  /**
+   * Runs a check action's function against its declared input sheets.
+   * Returns whether the check passed. A non-boolean return value is a fatal error,
+   * mirroring the transform runner's strict return contract.
+   */
+  runCheck(action: CheckAction, sheets: SheetRegistry): boolean {
+    const check = this.checkFunctions.get(action.name);
+    if (!check) {
+      throw new Error(`Check script for action "${action.name}" was not preflighted.`);
+    }
+    const inputs: Record<string, DataSheet> = {};
+    for (const name of action.inputSheets) {
+      inputs[name] = sheets.require(name);
+    }
+    const context = this.createContext(sheets);
+    const result = check(inputs, context);
+    if (typeof result !== 'boolean') {
+      throw new Error(`Check function for action "${action.name}" must return a boolean.`);
+    }
+    return result;
   }
 
   run(action: TransformAction, input: DataSheet, sheets: SheetRegistry): TransformResult {

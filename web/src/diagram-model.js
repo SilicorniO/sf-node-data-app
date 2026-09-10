@@ -36,6 +36,7 @@ function inputSheetsOf(action) {
   if (action.type === 'merge') return [action.primarySheet, action.secondarySheet];
   if (action.type === 'get') return [];
   if (action.type === 'transform') return [action.inputSheet];
+  if (action.type === 'check') return action.inputSheets || [];
   if (isWriteAction(action.type)) return [action.inputSheet];
   return [];
 }
@@ -112,6 +113,12 @@ export function buildDiagramGraph(state, catalog = []) {
     return id;
   };
 
+  const makeCheckNode = (column, actionIndex, name) => {
+    const id = `check:${actionIndex}`;
+    nodes.push({ id, kind: 'check', column, lane: laneSeq++, name: name || 'Check' });
+    return id;
+  };
+
   // Pre-existing input sheets (referenced but never produced) are placed in the
   // moment just *before* the first action that uses them, so their vector points
   // one column forward instead of dangling all the way back at column 0.
@@ -172,6 +179,14 @@ export function buildDiagramGraph(state, catalog = []) {
       const out = outName ? makeSheetNode(outName, column, { supersedes: overwrites }) : null;
       pushEdge(primary, out, 'merge-primary', true);
       pushEdge(secondary, out, 'merge-secondary', true);
+
+    } else if (action.type === 'check') {
+      // Like a write with no output: the check node marks the moment (shown with a
+      // ✓ glyph). Each declared input draws a labeled vector INTO it; no output edge.
+      const checkNode = makeCheckNode(column, index, action.name);
+      (action.inputSheets || []).forEach(name => {
+        pushEdge(resolveInput(name), checkNode, 'check', true);
+      });
 
     } else if (isWriteAction(action.type)) {
       // input --labeled--> [Salesforce] (Salesforce marks the output).

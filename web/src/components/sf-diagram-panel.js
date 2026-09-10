@@ -22,6 +22,7 @@ const TYPE_COLOR = {
   delete: '#dc2626',
   transform: '#d97706',
   merge: '#9333ea',
+  check: '#0d9488',
 };
 
 const TYPE_ICON = {
@@ -32,6 +33,7 @@ const TYPE_ICON = {
   delete: '×',
   transform: 'ƒ',
   merge: '⋈',
+  check: '✓',
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -150,6 +152,14 @@ class SfDiagramPanel extends HTMLElement {
       </g>`;
     }
 
+    if (node.kind === 'check') {
+      return `<g class="dg-node dg-check ${selected ? 'selected' : ''}" data-node="${esc(node.id)}" transform="translate(${x},${y})">
+        <rect width="${w}" height="${h}" rx="16"></rect>
+        <text class="dg-check-icon" x="${w / 2}" y="${h / 2 - 6}" text-anchor="middle">✓</text>
+        <text class="dg-check-label" x="${w / 2}" y="${h / 2 + 18}" text-anchor="middle">${esc(truncate(node.name, 16))}</text>
+      </g>`;
+    }
+
     const count = node.fieldCount == null ? '' : `${node.fieldCount} ${node.fieldCount === 1 ? 'field' : 'fields'}`;
     // A superseded (re-written) sheet carries a small "overwrites" badge.
     const badge = node.supersedes
@@ -207,6 +217,10 @@ class SfDiagramPanel extends HTMLElement {
       return `<h3 class="dg-detail-title">Salesforce</h3>
         <p class="dg-detail-sub">The connected org — source of GET results and target of writes.</p>`;
     }
+    if (node.kind === 'check') {
+      return `<h3 class="dg-detail-title">${esc(node.name)}</h3>
+        <p class="dg-detail-sub">A CHECK action: a script asserts a condition over its input sheets. Select an incoming arrow for the check's details.</p>`;
+    }
     const sheet = (this.state.sheets || []).find(s => s.name.toLowerCase() === node.name.toLowerCase());
     const declared = sheet
       ? `<div class="dg-detail-section"><h4>Column mapping</h4>
@@ -230,6 +244,7 @@ class SfDiagramPanel extends HTMLElement {
     row('Type', edge.type);
     row('Object', action.object);
     row('Input sheet', action.inputSheet);
+    row('Input sheets', (action.inputSheets || []).join(', '));
     row('Primary sheet', action.primarySheet);
     row('Secondary sheet', action.secondarySheet);
     row('Output sheet', action.outputSheet);
@@ -246,8 +261,11 @@ class SfDiagramPanel extends HTMLElement {
     const query = action.query
       ? `<div class="dg-detail-section"><h4>Query</h4><pre class="dg-detail-code">${esc(action.query)}</pre></div>`
       : '';
+    const scriptNote = edge.type === 'check'
+      ? 'The check returns true to pass; false is treated like a row error. It may also read other sheets via <code>lookup()</code>; those links are not drawn.'
+      : 'A transform may also read other sheets at runtime via <code>lookup()</code>; those links are not drawn.';
     const script = action.scriptContent
-      ? `<div class="dg-detail-section"><h4>Script</h4><pre class="dg-detail-code">${esc(truncate(action.scriptContent, 600))}</pre><p class="dg-detail-note">A transform may also read other sheets at runtime via <code>lookup()</code>; those links are not drawn.</p></div>`
+      ? `<div class="dg-detail-section"><h4>Script</h4><pre class="dg-detail-code">${esc(truncate(action.scriptContent, 600))}</pre><p class="dg-detail-note">${scriptNote}</p></div>`
       : '';
 
     return `<h3 class="dg-detail-title"><span class="dg-type-dot" style="background:${color}"></span> ${esc(action.name || 'Unnamed action')}</h3>
@@ -423,9 +441,9 @@ class SfDiagramPanel extends HTMLElement {
 
     const positioned = new Map();
     nodes.forEach(node => {
-      const isSf = node.kind === 'salesforce';
-      const width = isSf ? SF_WIDTH : NODE_WIDTH;
-      const height = isSf ? SF_HEIGHT : NODE_HEIGHT;
+      const compact = node.kind === 'salesforce' || node.kind === 'check';
+      const width = compact ? SF_WIDTH : NODE_WIDTH;
+      const height = compact ? SF_HEIGHT : NODE_HEIGHT;
       const x = PADDING + node.column * colStep + NODE_WIDTH / 2;
       const y = PADDING + rowInColumn.get(node.id) * ROW_HEIGHT + NODE_HEIGHT / 2;
       positioned.set(node.id, { x, y, width, height });

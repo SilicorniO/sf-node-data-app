@@ -9,6 +9,7 @@ import { UpdateAction } from '../model/UpdateAction';
 import { UpsertAction } from '../model/UpsertAction';
 import { DeleteAction } from '../model/DeleteAction';
 import { MergeAction } from '../model/MergeAction';
+import { CheckAction } from '../model/CheckAction';
 import { AppConfiguration } from '../model/AppConfiguration';
 import { ExecConf } from '../model/ExecConf';
 import { SheetConf } from '../model/SheetConf';
@@ -115,6 +116,11 @@ export class ExecConfReader {
           scriptFilePath,
           options
         );
+      case 'check':
+        if (!scriptFilePath) {
+          throw new Error(`Check action "${action.name}" requires a shared script; pass it with --scriptFile.`);
+        }
+        return new CheckAction(action.name, action.inputSheets, scriptFilePath, options);
     }
   }
 }

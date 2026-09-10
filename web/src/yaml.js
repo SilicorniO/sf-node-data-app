@@ -120,6 +120,11 @@ export function buildActionConfiguration(action) {
       result.outputSheet = value(action.outputSheet);
       result.idField = value(action.idField);
       break;
+    case 'check': {
+      const inputSheets = cleanFields(action.inputSheets);
+      if (inputSheets.length) result.inputSheets = inputSheets;
+      break;
+    }
   }
   return result;
 }
@@ -150,12 +155,13 @@ function escapeMarker(name) {
   return String(name).replace(/[\r\n]/g, ' ');
 }
 
-// Stitches every transform action's editor content into a single CommonJS module
-// keyed by action name. Sentinel comments let importSharedScript split it back apart.
+// Stitches every scripted action's editor content (transforms and checks) into a
+// single CommonJS module keyed by action name. Both action types are loaded from the
+// same --scriptFile. Sentinel comments let importSharedScript split it back apart.
 export function buildSharedScript(state) {
-  const transforms = state.actions.filter(action => action.type === 'transform');
-  if (!transforms.length) return '';
-  const entries = transforms.map(action => {
+  const scripted = state.actions.filter(action => action.type === 'transform' || action.type === 'check');
+  if (!scripted.length) return '';
+  const entries = scripted.map(action => {
     const name = escapeMarker(action.name || 'Unnamed action');
     const body = wrapAsFunction(action.scriptContent || '', name);
     return `  ${MARKER_START}${name}\n${indent(body)},\n  ${MARKER_END}${name}`;

@@ -133,6 +133,7 @@ h3 { font-size: 14px; }
 .type-upsert { background: #e0e7ff; color: #3730a3; }
 .type-delete { background: #fee2e2; color: #991b1b; }
 .type-merge { background: #f3e8ff; color: #6b21a8; }
+.type-check { background: #ccfbf1; color: #0f766e; }
 
 .preview-pane { position: sticky; top: 94px; height: calc(100vh - 112px); }
 .preview-card { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
@@ -216,6 +217,10 @@ sf-diagram-panel { flex: 1; min-width: 0; display: flex; }
 .dg-salesforce.selected rect { stroke: var(--primary); stroke-width: 2.5; }
 .dg-sf-icon { font-size: 26px; fill: #2563eb; user-select: none; -webkit-user-select: none; }
 .dg-sf-label { font-size: 12px; font-weight: 800; fill: #1d4ed8; user-select: none; -webkit-user-select: none; }
+.dg-check rect { fill: #f0fdfa; stroke: #5eead4; stroke-width: 1.5; }
+.dg-check.selected rect { stroke: var(--primary); stroke-width: 2.5; }
+.dg-check-icon { font-size: 24px; fill: #0d9488; user-select: none; -webkit-user-select: none; }
+.dg-check-label { font-size: 12px; font-weight: 800; fill: #0f766e; user-select: none; -webkit-user-select: none; }
 
 .dg-edge { cursor: pointer; }
 .dg-edge-hit { fill: none; stroke: transparent; stroke-width: 16; }

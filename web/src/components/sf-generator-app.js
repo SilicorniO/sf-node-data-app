@@ -8,6 +8,12 @@ import { checkDaemon, daemonPossible, fetchAuth, fetchConfig, loadSession, saveS
 import './sf-action-modal.js';
 import './sf-diagram-panel.js';
 
+// Actions whose logic lives in the shared --scriptFile module (keyed by action name).
+// Both transforms and checks are stitched into scripts.js and loaded from it.
+function actionUsesScript(action) {
+  return action.type === 'transform' || action.type === 'check';
+}
+
 class SfGeneratorApp extends HTMLElement {
   constructor() {
     super();
@@ -382,7 +388,7 @@ class SfGeneratorApp extends HTMLElement {
         <div><p class="eyebrow">Execute</p><h2>Run pipeline</h2></div>
         <span class="daemon-status ok">● Daemon connected${this.daemon?.cwd ? ` · ${esc(this.daemon.cwd)}` : ''}</span>
       </div>
-      <p class="section-intro">Runs the pipeline in the daemon's folder. The current <code>conf.yaml</code>${state.actions.some(a => a.type === 'transform') ? ' and <code>scripts.js</code>' : ''} are written before execution, exactly as if you had saved and run the CLI there.</p>
+      <p class="section-intro">Runs the pipeline in the daemon's folder. The current <code>conf.yaml</code>${state.actions.some(a => actionUsesScript(a)) ? ' and <code>scripts.js</code>' : ''} are written before execution, exactly as if you had saved and run the CLI there.</p>
 
       <div class="card run-config">
         <div class="run-field-group">
@@ -617,7 +623,7 @@ class SfGeneratorApp extends HTMLElement {
       toast('Fix configuration issues before running.', 'warning');
       return;
     }
-    const hasTransform = state.actions.some(action => action.type === 'transform');
+    const hasTransform = state.actions.some(action => actionUsesScript(action));
 
     // Build the auth payload from the selected source.
     const auth = { source: this.run.source };
@@ -775,7 +781,7 @@ class SfGeneratorApp extends HTMLElement {
 
     // Transform scripts travel in a single shared file so importing preloads them all.
     // The CLI receives this file via --scriptFile; the YAML no longer names it.
-    if (state.actions.some(action => action.type === 'transform')) {
+    if (state.actions.some(action => actionUsesScript(action))) {
       await this.saveFile(buildSharedScript(state), 'scripts.js', 'text/javascript', 'CommonJS JavaScript', ['.js', '.cjs']);
     }
   }
@@ -788,7 +794,7 @@ class SfGeneratorApp extends HTMLElement {
       toast('Fix configuration issues before saving.', 'warning');
       return;
     }
-    const hasTransform = state.actions.some(action => action.type === 'transform');
+    const hasTransform = state.actions.some(action => actionUsesScript(action));
     try {
       await saveConfig({
         yaml: result.yaml,
@@ -935,13 +941,13 @@ class SfGeneratorApp extends HTMLElement {
   // matching by action name, and reports precisely what could not be matched so the user
   // knows what is wrong instead of quietly getting blank editors.
   applySharedScript(scriptText) {
-    const transforms = state.actions.filter(action => action.type === 'transform');
+    const transforms = state.actions.filter(action => actionUsesScript(action));
     const hasScript = Boolean(scriptText.trim());
 
-    // No transforms in the YAML: a script file is pointless — say so rather than ignoring it.
+    // No scripted actions in the YAML: a script file is pointless — say so rather than ignoring it.
     if (!transforms.length) {
       if (hasScript) {
-        toast('This configuration has no transform actions, so the script file was not used.', 'warning', 6000);
+        toast('This configuration has no transform or check actions, so the script file was not used.', 'warning', 6000);
       }
       return;
     }

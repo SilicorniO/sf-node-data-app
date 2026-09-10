@@ -8,6 +8,7 @@ import { InsertAction } from '../../src/model/InsertAction';
 import { TransformAction } from '../../src/model/TransformAction';
 import { UpdateAction } from '../../src/model/UpdateAction';
 import { UpsertAction } from '../../src/model/UpsertAction';
+import { CheckAction } from '../../src/model/CheckAction';
 
 const allActionsYaml = `
 actions:
@@ -62,6 +63,29 @@ describe('ExecConfReader', () => {
     expect((configuration.actions[1] as TransformAction).scriptFile).toBe(
       path.resolve('/configuration/scripts.js')
     );
+  });
+
+  it('parses a check action with input sheets and injects the script file', () => {
+    const configuration = ExecConfReader.parseConf(`
+actions:
+  - type: check
+    name: Enough Accounts
+    inputSheets: [Accounts, Contacts]
+`, '/configuration/scripts.js');
+    expect(configuration.actions).toHaveLength(1);
+    const action = configuration.actions[0];
+    expect(action).toBeInstanceOf(CheckAction);
+    expect((action as CheckAction).inputSheets).toEqual(['Accounts', 'Contacts']);
+    expect((action as CheckAction).scriptFile).toBe(path.resolve('/configuration/scripts.js'));
+    expect(action).toMatchObject({ continueOnError: false, errorSheet: 'Enough Accounts-errors' });
+  });
+
+  it('defaults a check action to an empty input sheet list', () => {
+    const configuration = ExecConfReader.parseConf(`
+actions:
+  - { type: check, name: Standalone }
+`, '/configuration/scripts.js');
+    expect((configuration.actions[0] as CheckAction).inputSheets).toEqual([]);
   });
 
   it('trims values and parses app and sheet mapping defaults', () => {
@@ -165,6 +189,9 @@ actions:
     ['error sheet collision', `actions:\n  - { type: transform, name: Transform, inputSheet: A, outputSheet: B, errorSheet: b }`, './scripts.js'],
     ['transform without a script file', `actions:\n  - { type: transform, name: Transform, inputSheet: A, outputSheet: B }`, undefined],
     ['unknown scriptFile key in YAML', `scriptFile: ./scripts.js\nactions: []`, undefined],
+    ['check without a script file', `actions:\n  - { type: check, name: Check, inputSheets: [A] }`, undefined],
+    ['check with duplicate input sheets', `actions:\n  - { type: check, name: Check, inputSheets: [A, a] }`, './scripts.js'],
+    ['check error sheet collision', `actions:\n  - { type: check, name: Check, inputSheets: [A], errorSheet: a }`, './scripts.js'],
   ])('rejects %s', (_description, yaml, scriptFile) => {
     expect(() => ExecConfReader.parseConf(yaml, scriptFile)).toThrow(/Error parsing configuration/);
   });
@@ -175,7 +202,7 @@ actions:
       .map(entry => path.join(examplesDirectory, entry, 'conf.yaml'))
       .filter(file => fs.existsSync(file));
 
-    expect(configurationPaths).toHaveLength(7);
+    expect(configurationPaths).toHaveLength(8);
     for (const configurationPath of configurationPaths) {
       // Examples keep their shared transform script next to conf.yaml; pass it like the CLI would.
       const scriptPath = path.join(path.dirname(configurationPath), 'scripts.js');

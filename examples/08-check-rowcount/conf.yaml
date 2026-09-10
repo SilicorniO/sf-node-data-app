@@ -1,0 +1,15 @@
+appConfiguration:
+  processingType: "bulk"
+  apiVersion: "63.0"
+
+actions:
+  - name: "Enough Employees"
+    type: "check"
+    inputSheets:
+      - "employees"
+    continueOnError: false
+  - name: "No Placeholder Departments"
+    type: "check"
+    inputSheets:
+      - "employees"
+    continueOnError: true

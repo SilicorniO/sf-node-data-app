@@ -94,6 +94,15 @@ const mergeActionSchema = z.object({
   }
 });
 
+const checkActionSchema = z.object({
+  ...actionCommon,
+  type: z.literal('check'),
+  inputSheets: z.array(safeLogicalName).default([]).refine(
+    values => new Set(values.map(value => value.toLocaleLowerCase())).size === values.length,
+    'must not contain duplicate sheet names'
+  ),
+}).strict();
+
 export const actionSchema = z.union([
   getActionSchema,
   insertActionSchema,
@@ -102,6 +111,7 @@ export const actionSchema = z.union([
   deleteActionSchema,
   transformActionSchema,
   mergeActionSchema,
+  checkActionSchema,
 ]);
 
 const appConfigurationSchema = z.object({
@@ -155,6 +165,7 @@ export const execConfSchema = z.object({
       'outputSheet' in action ? action.outputSheet : undefined,
       'primarySheet' in action ? action.primarySheet : undefined,
       'secondarySheet' in action ? action.secondarySheet : undefined,
+      ...('inputSheets' in action ? action.inputSheets : []),
     ].filter((value): value is string => Boolean(value));
     if (normalSheets.some(sheet => sheet.toLocaleLowerCase() === errorSheet)) {
       context.addIssue({ code: 'custom', path: ['actions', index, 'errorSheet'], message: 'errorSheet must differ from this action inputSheet and outputSheet' });

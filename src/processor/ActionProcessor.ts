@@ -9,6 +9,7 @@ import { TransformAction } from '../model/TransformAction';
 import { UpdateAction } from '../model/UpdateAction';
 import { UpsertAction } from '../model/UpsertAction';
 import { WriteAction } from '../model/WriteAction';
+import { CheckAction } from '../model/CheckAction';
 import { buildCountQuery, decideByCount } from '../salesforce/AutoModeSelector';
 import { SalesforceApiLoader } from '../salesforce/SalesforceApiLoader';
 import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
@@ -51,6 +52,8 @@ function actionInputSheets(action: Action): string[] {
     case 'upsert':
     case 'delete':
       return [(action as WriteAction).inputSheet];
+    case 'check':
+      return (action as CheckAction).inputSheets;
     case 'get':
     default:
       return [];
@@ -141,6 +144,13 @@ export class ActionProcessor {
           console.log(`      Precheck: loading ${transforms.length} transform script(s).`);
         }
         transformRunner.preflight(transforms);
+        const checks = selectedActions.filter(
+          (action): action is CheckAction => action.type === 'check'
+        ) as CheckAction[];
+        if (checks.length > 0) {
+          console.log(`      Precheck: loading ${checks.length} check script(s).`);
+        }
+        transformRunner.preflightChecks(checks);
       } catch (error: any) {
         throw new ConfigurationPreflightError(error.message);
       }
@@ -270,6 +280,8 @@ export class ActionProcessor {
         case 'upsert':
         case 'delete':
           return await this.executeWrite(execConf, action as WriteAction, sheets);
+        case 'check':
+          return this.executeCheck(action as CheckAction, sheets, transformRunner);
       }
     } catch (error: any) {
       if (error instanceof PipelineExecutionError) throw error;
@@ -359,6 +371,23 @@ export class ActionProcessor {
       return true;
     }
     return false;
+  }
+
+  private static executeCheck(
+    action: CheckAction,
+    sheets: SheetRegistry,
+    runner: TransformScriptRunner
+  ): boolean {
+    const passed = runner.runCheck(action, sheets);
+    if (passed) {
+      console.log('        Check passed.');
+      return false;
+    }
+    const message = `Check "${action.name}" failed.`;
+    console.warn(`        ${message}`);
+    const errorRow: TransformRow = { _ErrorMessage: message };
+    sheets.set(action.errorSheet, TransformScriptRunner.rowsToDataSheet(action.errorSheet, [errorRow]));
+    return true;
   }
 
   private static executeMerge(action: MergeAction, sheets: SheetRegistry): void {

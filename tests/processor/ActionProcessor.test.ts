@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppConfiguration } from '../../src/model/AppConfiguration';
+import { CheckAction } from '../../src/model/CheckAction';
 import { ExecConf } from '../../src/model/ExecConf';
 import { InsertAction } from '../../src/model/InsertAction';
 import { TransformAction } from '../../src/model/TransformAction';
@@ -13,6 +14,7 @@ import {
   ConfigurationPreflightError,
   describeActionRange,
   isBulkQueryUnsupported,
+  PipelineExecutionError,
   resolveActionRange,
 } from '../../src/processor/ActionProcessor';
 import { SheetRegistry } from '../../src/processor/SheetRegistry';
@@ -339,5 +341,79 @@ describe('ActionProcessor action range execution', () => {
 
     expect(out.out).toEqual([['a', '42']]);
     expect(loads).toBeGreaterThan(0);
+  });
+});
+
+describe('ActionProcessor check execution', () => {
+  let tempDir = '';
+  let checkScript = '';
+
+  beforeAll(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfdata-check-'));
+    checkScript = path.join(tempDir, 'checks.js');
+    fs.writeFileSync(
+      checkScript,
+      'module.exports = {'
+      + ' "Enough Rows": function (sheets) { return sheets["input"].data.length > 1; },'
+      + ' "Same Row Count": function (sheets) { return sheets["input"].data.length === sheets["other"].data.length; }'
+      + ' };'
+    );
+  });
+
+  afterAll(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function sheets(rows: string[][]): SheetRegistry {
+    return new SheetRegistry({
+      input: { name: 'input', fieldNames: ['Name'], data: rows },
+    });
+  }
+
+  function config(action: CheckAction): ExecConf {
+    return new ExecConf(new AppConfiguration('api', null, null, '58.0'), [action], []);
+  }
+
+  it('passes silently when the check returns true and writes no error sheet', async () => {
+    const registry = sheets([['Acme'], ['Globex']]);
+    const action = new CheckAction('Enough Rows', ['input'], checkScript);
+
+    const result = await ActionProcessor.processActions(config(action), registry);
+
+    expect(result.hadContinuedErrors).toBe(false);
+    expect(registry.get('Enough Rows-errors')).toBeUndefined();
+  });
+
+  it('stops the pipeline when the check fails and continueOnError is false', async () => {
+    const registry = sheets([['Acme']]);
+    const action = new CheckAction('Enough Rows', ['input'], checkScript);
+
+    await expect(ActionProcessor.processActions(config(action), registry))
+      .rejects.toBeInstanceOf(PipelineExecutionError);
+  });
+
+  it('continues and records a one-row error sheet when continueOnError is true', async () => {
+    const registry = sheets([['Acme']]);
+    const action = new CheckAction('Enough Rows', ['input'], checkScript, { continueOnError: true });
+
+    const result = await ActionProcessor.processActions(config(action), registry);
+
+    expect(result.hadContinuedErrors).toBe(true);
+    const errors = registry.get('Enough Rows-errors');
+    expect(errors?.fieldNames).toEqual(['_ErrorMessage']);
+    expect(errors?.data).toEqual([['Check "Enough Rows" failed.']]);
+  });
+
+  it('reads multiple input sheets in a single check', async () => {
+    const registry = new SheetRegistry({
+      input: { name: 'input', fieldNames: ['Name'], data: [['Acme'], ['Globex']] },
+      other: { name: 'other', fieldNames: ['Name'], data: [['One'], ['Two']] },
+    });
+    const action = new CheckAction('Same Row Count', ['input', 'other'], checkScript);
+
+    const result = await ActionProcessor.processActions(config(action), registry);
+
+    expect(result.hadContinuedErrors).toBe(false);
+    expect(registry.get('Same Row Count-errors')).toBeUndefined();
   });
 });

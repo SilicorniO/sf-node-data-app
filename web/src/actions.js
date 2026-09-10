@@ -8,6 +8,7 @@ export const ACTION_TYPES = [
   { value: 'delete', label: 'DELETE', description: 'Delete Salesforce records by Id' },
   { value: 'transform', label: 'TRANSFORM', description: 'Run a JavaScript module per row' },
   { value: 'merge', label: 'MERGE', description: 'Merge two sheets into one by an id field' },
+  { value: 'check', label: 'CHECK', description: 'Assert a condition with a JavaScript function' },
 ];
 
 export function createAction(type = 'get', source = {}) {
@@ -33,6 +34,11 @@ export function createAction(type = 'get', source = {}) {
     Object.assign(action, {
       inputSheet: source.inputSheet || '',
       outputSheet: source.outputSheet || '',
+      scriptContent: source.scriptContent || '',
+    });
+  } else if (type === 'check') {
+    Object.assign(action, {
+      inputSheets: [...(source.inputSheets || [])],
       scriptContent: source.scriptContent || '',
     });
   } else {
@@ -65,6 +71,7 @@ export function changeActionType(action, type) {
     primarySheet: action.primarySheet,
     secondarySheet: action.secondarySheet,
     idField: action.idField,
+    inputSheets: action.inputSheets,
   });
 }
 
@@ -93,6 +100,10 @@ export function actionDescription(action) {
   }
   if (action.type === 'merge') {
     return `${action.primarySheet || 'primary'} + ${action.secondarySheet || 'secondary'} → ${action.outputSheet || 'output'}`;
+  }
+  if (action.type === 'check') {
+    const inputs = (action.inputSheets || []).filter(Boolean);
+    return `check ${inputs.length ? inputs.join(', ') : 'condition'}`;
   }
   const target = action.object || 'Salesforce object';
   return `${action.inputSheet || 'input sheet'} → ${target}`;
@@ -125,7 +136,9 @@ export function sheetCatalog(state, beforeIndex = state.actions.length) {
     }
     if (action.type === 'insert' && action.outputSheet) add(action.outputSheet, ['_InputRow', 'Id']);
     const errorName = action.errorSheet || `${action.name}-errors`;
-    add(errorName, action.type === 'get' ? ['_ErrorMessage'] : [...inputFields, '_ErrorMessage']);
+    // GET and CHECK error sheets carry only the error message; row-based actions
+    // prepend the input sheet's fields.
+    add(errorName, action.type === 'get' || action.type === 'check' ? ['_ErrorMessage'] : [...inputFields, '_ErrorMessage']);
   });
   return catalog;
 }

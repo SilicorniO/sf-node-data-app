@@ -24,9 +24,7 @@ class SfActionModal extends HTMLElement {
     this.suggestions = sheetCatalog.map(sheet => sheet.name);
     this.otherActions = otherActions;
     this.errors = {};
-    if (this.draft.type === 'transform' && !this.draft.scriptContent) {
-      this.draft.scriptContent = this.transformTemplate();
-    }
+    this.seedScriptTemplate();
     this.render();
     requestAnimationFrame(() => this.querySelector(`[data-field="${focusField}"]`)?.focus());
   }
@@ -133,6 +131,30 @@ class SfActionModal extends HTMLElement {
         ${this.field('outputSheet', 'Output sheet', action.outputSheet, { required: true, list: true, placeholder: 'Merged sheet' })}
       </div>`;
     }
+    if (action.type === 'check') {
+      return `<div class="form-grid two">
+        <div class="field wide">
+          <span class="field-title-row">Input sheets</span>
+          <div class="chips">
+            ${(action.inputSheets || []).map((sheet, index) => `
+              <span class="chip">
+                ${esc(sheet)}
+                <button type="button" data-remove-input="${index}" aria-label="Remove ${esc(sheet)}">×</button>
+              </span>`).join('')}
+            <input id="new-input-sheet" type="text" list="sheet-suggestions" placeholder="Add a sheet, then Enter">
+          </div>
+          <small class="hint">Optional. The check function receives these sheets as <code>{ [name]: sheet }</code>. Each one draws a vector into the check node.</small>
+        </div>
+        <div class="field wide script-editor-field">
+          <span class="field-title-row">
+            JavaScript editor
+            <button type="button" class="button secondary compact-button" data-new-script>Reset to template</button>
+          </span>
+          <div class="script-editor" data-script-editor></div>
+          <small class="hint">Export <code>module.exports = function (sheets, { lookup, lookupAll }) { return true; }</code>. Return <code>true</code> to pass; <code>false</code> is treated like a row error (writes an error sheet, respects "continue on errors"). Saved together in the shared script file.</small>
+        </div>
+      </div>`;
+    }
     const fields = action.type === 'delete' ? '' : this.fieldsEditor(action);
     const output = action.type === 'insert'
       ? this.field('outputSheet', 'ID output sheet', action.outputSheet, { list: true, placeholder: 'Optional: Inserted IDs' })
@@ -211,6 +233,7 @@ class SfActionModal extends HTMLElement {
       event.preventDefault();
       this.sync();
       this.commitPendingField();
+      this.commitPendingInputSheet();
       ensureIdentifierField(this.draft);
       const issues = validateActionDraft(this.draft, this.otherActions);
       this.errors = issuesByField(issues);
@@ -228,9 +251,7 @@ class SfActionModal extends HTMLElement {
     this.querySelector('[data-field="type"]').addEventListener('change', event => {
       this.sync();
       this.draft = changeActionType(this.draft, event.target.value);
-      if (this.draft.type === 'transform' && !this.draft.scriptContent) {
-        this.draft.scriptContent = this.transformTemplate();
-      }
+      this.seedScriptTemplate();
       this.errors = {};
       this.render();
     });
@@ -267,9 +288,21 @@ class SfActionModal extends HTMLElement {
     });
     this.querySelector('[data-new-script]')?.addEventListener('click', () => {
       this.sync();
-      this.draft.scriptContent = this.transformTemplate();
+      this.draft.scriptContent = this.draft.type === 'check' ? this.checkTemplate() : this.transformTemplate();
       this.render();
     });
+    this.querySelector('#new-input-sheet')?.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ',') return;
+      event.preventDefault();
+      this.sync();
+      this.commitPendingInputSheet();
+      this.render();
+    });
+    this.querySelectorAll('[data-remove-input]').forEach(button => button.addEventListener('click', () => {
+      this.sync();
+      this.draft.inputSheets.splice(Number(button.dataset.removeInput), 1);
+      this.render();
+    }));
     this.querySelectorAll('[data-remove-field]').forEach(button => button.addEventListener('click', () => {
       this.sync();
       this.draft.fields.splice(Number(button.dataset.removeField), 1);
@@ -297,6 +330,17 @@ class SfActionModal extends HTMLElement {
     const field = input?.value.trim();
     if (!field) return;
     this.addFieldsFromText(field, false);
+    if (input) input.value = '';
+  }
+
+  commitPendingInputSheet() {
+    const input = this.querySelector('#new-input-sheet');
+    const sheet = input?.value.trim();
+    if (!sheet) return;
+    this.draft.inputSheets ||= [];
+    if (!this.draft.inputSheets.some(name => name.toLowerCase() === sheet.toLowerCase())) {
+      this.draft.inputSheets.push(sheet);
+    }
     if (input) input.value = '';
   }
 
@@ -346,7 +390,7 @@ class SfActionModal extends HTMLElement {
 
   initializeScriptEditor() {
     const parent = this.querySelector('[data-script-editor]');
-    if (!parent || this.draft.type !== 'transform') return;
+    if (!parent || (this.draft.type !== 'transform' && this.draft.type !== 'check')) return;
     this.scriptEditor = new EditorView({
       doc: this.draft.scriptContent || '',
       extensions: [
@@ -359,6 +403,32 @@ class SfActionModal extends HTMLElement {
       ],
       parent,
     });
+  }
+
+  // Seeds a fresh script template for scripted actions that have no content yet.
+  seedScriptTemplate() {
+    if (this.draft.type === 'transform' && !this.draft.scriptContent) {
+      this.draft.scriptContent = this.transformTemplate();
+    } else if (this.draft.type === 'check' && !this.draft.scriptContent) {
+      this.draft.scriptContent = this.checkTemplate();
+    }
+  }
+
+  checkTemplate() {
+    const inputs = (this.draft.inputSheets || []).filter(Boolean);
+    const inputComment = inputs.length
+      ? ` * Input sheets: ${inputs.map(name => name.replace(/\*\//g, '* /')).join(', ')}\n`
+      : ' * Add input sheets above to receive them in `sheets`.\n';
+    const example = inputs.length
+      ? `  // Example: require more than 100 rows in "${inputs[0].replace(/[\\`$]/g, '')}".\n  // return sheets[${JSON.stringify(inputs[0])}].data.length > 100;\n`
+      : '  // return sheets["Accounts"].data.length > 100;\n';
+    return `/**
+ * Return true when the check passes; false is treated like a row error.
+${inputComment} */
+module.exports = function check(sheets, { lookup, lookupAll }) {
+${example}  return true;
+};
+`;
   }
 
   transformTemplate() {
