@@ -9,6 +9,8 @@ entry in `actions` performs exactly one operation:
 - `upsert`: upsert rows by an external-ID field
 - `delete`: delete rows by `Id`
 - `transform`: run a JavaScript function for each CSV row
+- `merge`: join two sheets on a key field, locally (no Salesforce)
+- `check`: run a JavaScript assertion over one or more sheets (no Salesforce)
 
 Actions run sequentially in YAML order. Every output is immediately available as
 an input to later actions.
@@ -103,9 +105,9 @@ npx ts-node src/Index.ts \
   --outputFolder output
 ```
 
-If the pipeline has any `transform` action, pass the shared CommonJS script with
-`--scriptFile` (`-s`). It is resolved relative to the current working directory and
-is required only when a transform exists; the YAML no longer references it.
+If the pipeline has any `transform` or `check` action, pass the shared CommonJS script
+with `--scriptFile` (`-s`). It is resolved relative to the current working directory and
+is required only when a transform or check exists; the YAML no longer references it.
 
 To run only part of a pipeline, pass `--fromTask` and/or `--toTask` with an action
 name (case-insensitive) or a 1-based YAML index. The range is inclusive.
@@ -253,7 +255,8 @@ that cannot be rewritten to a count (aggregates, `GROUP BY`, `LIMIT`) stay on
 the synchronous API.
 - `bulkApiMaxWaitSec`: optional Bulk job timeout; default is 300 at runtime
 - `bulkApiPollIntervalSec`: optional Bulk polling interval; default is 5
-- `apiVersion`: Salesforce API version; defaults to `58.0`
+- `apiVersion`: Salesforce API version; defaults to `58.0` (the bundled examples pin
+`63.0`)
 - `queryApiBatchSize`: REST Query API page size (200–2000, default `2000`).
 Synchronous GET actions use this setting, but Salesforce can still reduce
 pages (for example to 250 rows). Bulk GET downloads CSV pages of up to 50,000
@@ -442,6 +445,56 @@ completes.
 Configured scripts run as normal trusted Node.js modules and can access Node APIs.
 Only run configuration and scripts you trust.
 
+### MERGE
+
+```yaml
+- type: merge
+  name: Merge Data
+  primarySheet: base
+  secondarySheet: extra
+  outputSheet: merged
+  idField: Id
+```
+
+MERGE joins two in-memory sheets on `idField`, entirely locally — no Salesforce call and
+no credentials. `secondarySheet` must differ from `primarySheet`. Output columns are all
+primary columns followed by any columns only the secondary sheet has. Rows are matched by
+`idField`; where both sides have a value, the **primary** non-empty cell wins. Secondary
+rows with no matching id (and rows with a blank id) are appended unchanged. A duplicate id
+within either sheet is an error.
+
+### CHECK
+
+```yaml
+- type: check
+  name: Enough Employees
+  inputSheets: [employees]
+  continueOnError: false
+```
+
+CHECK runs a JavaScript assertion over one or more sheets and produces no output sheet. It
+is offline — no Salesforce credentials are needed. Like `transform`, its function lives in
+the shared `--scriptFile` module, keyed by the action `name`, and receives its declared
+`inputSheets`:
+
+```js
+// scripts.js
+module.exports = {
+  'Enough Employees': function (sheets) {
+    return sheets['employees'].data.length > 3;
+  },
+};
+```
+
+Each sheet is a `DataSheet` — `{ name, fieldNames, data }` — where `data` is an array of
+rows and each row is an **array of string cells**; access a column positionally with
+`fieldNames.indexOf('Column')`. The function also receives the shared `lookup` /
+`lookupAll` context. It must return a boolean; any other return value is a fatal error.
+
+Returning `false` writes a single-row error sheet (`<name>-errors`) and stops the
+pipeline, unless the action sets `continueOnError: true`, in which case later actions
+still run.
+
 ## Output and failures
 
 All in-memory sheets—including untouched inputs, generated outputs, and created
@@ -452,3 +505,18 @@ exits non-zero. YAML validation and transform preflight failures exit non-zero
 without writing CSV files.
 
 See `[examples/](examples/)` for runnable configurations.
+
+## AI assistance
+
+To have an AI build a configuration for you, point it at [ai/AI_GUIDE.md](ai/AI_GUIDE.md)
+— a terse, complete spec of the config schema, the transform/check script contract, the
+folders, and the CLI.
+
+The [ai/skills/](ai/skills/) folder bundles two Claude Code skills:
+
+- **build-config** — author or edit a `conf.yaml`.
+- **build-script** — author the shared `scripts.js` (transform and check functions).
+
+Claude Code only auto-discovers skills under `.claude/skills/`, so these are not loaded by
+default. To use them, either start Claude Code with `--add-dir ai/skills`, or copy the
+skill folders into `.claude/skills/`.

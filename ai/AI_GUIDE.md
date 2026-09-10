@@ -8,7 +8,11 @@ CSV/Excel inputs and Salesforce, driven by **one YAML config file**. Sheets flow
 actions in memory; produced sheets are written as CSV to the output folder.
 
 > Source of truth: the Zod schema `src/schema/ExecConfSchema.ts` and the runnable
-> `examples/01..07/`. **Ignore `input/*.yaml`** — that is a deprecated, rejected format.
+> `examples/01..08/`. **Ignore `input/*.yaml`** — that is a deprecated, rejected format.
+
+> Task-focused skills that build on this guide live in `ai/skills/` — `build-config`
+> (author a `conf.yaml`) and `build-script` (author the shared `scripts.js`). They are not
+> auto-discovered; load with `--add-dir ai/skills` or copy into `.claude/skills/`.
 
 ---
 
@@ -62,7 +66,7 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
 | Field | Default | Meaning |
 |---|---|---|
 | `name` | (required) | Unique logical name. No `/ \ ..` or control chars. |
-| `type` | (required) | `get`/`insert`/`update`/`upsert`/`delete`/`transform`/`merge` |
+| `type` | (required) | `get`/`insert`/`update`/`upsert`/`delete`/`transform`/`merge`/`check` |
 | `waitBeforeSeconds` | `0` | Delay before running this action |
 | `continueOnError` | `false` | If `true`, row errors don't halt the pipeline |
 | `errorSheet` | `<name>-errors` | Sheet/CSV for failed rows (adds `_ErrorMessage`) |
@@ -119,15 +123,25 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
   secondarySheet: "extra"               # must differ from primarySheet; unmatched rows appended
   outputSheet: "merged"
   idField: "Id"                         # join key; duplicate ids throw
+
+# CHECK — assert a condition over one or more sheets (local, no Salesforce)
+- name: "Enough Employees"              # this name is the key into the shared script file
+  type: "check"
+  inputSheets: ["employees"]            # one or more sheets passed to the function
+  continueOnError: false                # false return -> one-row error sheet + stop unless continueOnError
 ```
+
+`check` runs a JS function (from `--scriptFile`) that returns a boolean. See §2 for its
+signature — it differs from a transform function.
 
 ---
 
-## 2. Transform scripts
+## 2. Transform and check scripts
 
-- **One shared file** for the whole config, passed on the command line with `--scriptFile`
-  (e.g. `--scriptFile ./scripts.js`, resolved against the current working directory). It is a
-  CommonJS module that **exports an object keyed by action name**:
+- **One shared file** for the whole config, holding both transform and check functions,
+  passed on the command line with `--scriptFile` (e.g. `--scriptFile ./scripts.js`,
+  resolved against the current working directory). It is a CommonJS module that
+  **exports an object keyed by action name**:
   `module.exports = { "Resolve Accounts": function (row, ctx) { ... }, ... }`.
 - The key **must exactly match** the transform action's `name`. Action names are unique
   (case-insensitive), so keys never collide.
@@ -178,6 +192,39 @@ module.exports = {
 
 Return `null` to filter (skip) a row; derive new columns by assigning `row.NewCol = ...`.
 
+### Check functions — a different shape
+
+A `check` action's function lives in the same shared file, keyed by the action `name`, but
+its signature and inputs differ from a transform:
+
+**Signature:** `(sheets, context) => boolean`
+
+- `sheets`: an object keyed by the action's `inputSheets`. Each value is a **`DataSheet`**:
+  `{ name: string, fieldNames: string[], data: string[][] }`. Unlike a transform's `row`
+  object, `data` is an **array of rows where each row is an array of string cells** —
+  access a column positionally via `sheet.fieldNames.indexOf('Column')`.
+- `context`: the same `lookup` / `lookupAll` helpers as transforms (lookup rows are
+  objects keyed by field name).
+- **Return a boolean.** A non-boolean return is a **fatal** error. Returning `false` writes
+  a one-row error sheet (`<name>-errors`) and stops the pipeline unless the action sets
+  `continueOnError: true`.
+
+**Example** (`examples/08-check-rowcount/scripts.js`):
+
+```js
+module.exports = {
+  'Enough Employees': function (sheets) {
+    return sheets['employees'].data.length > 3;   // more than 3 rows
+  },
+  'No Placeholder Departments': function (sheets) {
+    const sheet = sheets['employees'];
+    const column = sheet.fieldNames.indexOf('Department');
+    if (column < 0) return true;                   // column absent -> nothing to check
+    return sheet.data.every(row => row[column] !== 'XXXX');
+  },
+};
+```
+
 ---
 
 ## 3. Folders & files
@@ -206,7 +253,7 @@ point `--outputFolder` at a separate `output/` dir.
 npm install && npm run build
 
 # Run a config with a CSV input, writing results to ./output
-# Pass --scriptFile whenever the config has a transform action.
+# Pass --scriptFile whenever the config has a transform or check action.
 node dist/Index.js -c examples/02-insert-contacts/conf.yaml \
   -s examples/02-insert-contacts/scripts.js \
   -v examples/02-insert-contacts/contacts.csv -o output
@@ -217,8 +264,9 @@ npx ts-node src/Index.ts --confFile <conf.yaml> --scriptFile <scripts.js> \
 ```
 
 Phases: load+validate YAML → prepare output folder → index inputs → field mappings + SF auth
-(only if a non-transform action is in range) → run selected actions in order (streaming
-output) → flush remaining sheets. Exit code 1 on failure; accepted row-errors still exit 0.
+(only if a Salesforce action is in range; `transform`, `check`, and `merge` are offline) →
+run selected actions in order (streaming output) → flush remaining sheets. Exit code 1 on
+failure; accepted row-errors still exit 0.
 
 There is also an **offline YAML generator UI**: `npm run build:web` →
 `dist-web/execconf_generator.html` (forms + validation). Opened as a `file://`
@@ -246,7 +294,7 @@ fine.
 | `--csvFiles <paths...>` | `-v` | no | — | One or more CSV inputs |
 | `--excelFile <path>` | `-e` | no | — | One Excel workbook |
 | `--inputFolder <path>` | `-i` | no | — | Scan folder (non-recursive) for CSV+Excel |
-| `--scriptFile <path>` | `-s` | only if a transform exists | — | Shared CommonJS transform module (keyed by action name), resolved against cwd |
+| `--scriptFile <path>` | `-s` | only if a transform or check exists | — | Shared CommonJS module of transform + check functions (keyed by action name), resolved against cwd |
 | `--outputFolder <path>` | `-o` | no | `./` | Output CSV folder |
 | `--fromTask <name\|index>` | — | no | first action | Start action (name, case-insensitive, or 1-based index) |
 | `--toTask <name\|index>` | — | no | last action | End action (inclusive) |
@@ -258,13 +306,13 @@ Use `--fromTask`/`--toTask` to run a sub-range of the pipeline (e.g. re-run only
 ## 6. Salesforce authentication (env vars / `.env`)
 
 Precedence: **bearer token → client credentials → Salesforce CLI**.
-Auth is only performed when the run includes a non-`transform`/`merge` action.
+Auth is only performed when the run includes a non-`transform`/`check`/`merge` action.
 
 - **Bearer:** `SF_ACCESS_TOKEN` + `SF_INSTANCE_URL` (both required).
 - **Client credentials:** `SF_CLIENT_ID` + `SF_CLIENT_SECRET` + `SF_INSTANCE_URL` (all three).
 - **SF CLI fallback:** none set → uses the active org via the `sf` CLI.
 
-Pure `transform`/`merge`-only pipelines need no Salesforce credentials.
+Pure `transform`/`check`/`merge`-only pipelines need no Salesforce credentials.
 
 ---
 
@@ -309,7 +357,7 @@ node dist/Index.js -c myjob/conf.yaml -s myjob/scripts.js -v myjob/contacts.csv 
 - [ ] `--confFile` points to a valid YAML with `actions`.
 - [ ] Every `inputSheet` is either an input file's sheet or a prior action's `outputSheet`.
 - [ ] `fields` rules honored: insert excludes `Id`; update includes `Id`; upsert includes `externalIdField`.
-- [ ] If any transform exists, `--scriptFile` is passed and the shared file exports a function keyed by each transform action's `name`.
+- [ ] If any transform or check exists, `--scriptFile` is passed and the shared file exports a function keyed by each transform/check action's `name`.
 - [ ] Inputs supplied via `-v`/`-e`/`-i`; sheet names don't collide.
 - [ ] SF auth env vars set if any get/insert/update/upsert/delete action runs.
 - [ ] `--outputFolder` set (not a protected path if cleaning is enabled).
