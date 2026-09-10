@@ -38,6 +38,28 @@ export async function fetchConfig() {
   return response.json();
 }
 
+/**
+ * Persists conf.yaml (and scripts.js) to the daemon's folder without running the pipeline.
+ * @param payload { yaml, script?, hasTransform }
+ */
+export async function saveConfig(payload) {
+  const response = await fetch('/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let message = `Save failed (${response.status})`;
+    try {
+      message = (await response.json()).error || message;
+    } catch {
+      /* keep default message */
+    }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
 /** Session-scoped credential store (sessionStorage): pasted token + instance URL. */
 export function loadSession() {
   try {

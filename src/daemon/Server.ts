@@ -137,6 +137,10 @@ export function startUiServer(options: StartUiServerOptions = {}): http.Server {
       handleConfig(cwd, response);
       return;
     }
+    if (request.method === 'POST' && route === '/config') {
+      handleSaveConfig(cwd, request, response);
+      return;
+    }
     if (request.method === 'POST' && route === '/run') {
       if (running) {
         sendJson(response, 409, { error: 'A pipeline run is already in progress.' });
@@ -199,6 +203,47 @@ export function readFolderConfig(cwd: string): {
   return { hasConf: yaml !== null, yaml, script };
 }
 
+/**
+ * Writes conf.yaml (and scripts.js only when the pipeline has a transform action) to
+ * the daemon's folder. Single writer shared by the save endpoint and the run endpoint,
+ * so a saved-then-run configuration is byte-identical to a run-written one.
+ */
+export function writeFolderConfig(
+  cwd: string,
+  config: { yaml: string; script?: string; hasTransform?: boolean }
+): void {
+  fs.writeFileSync(path.join(cwd, CONF_FILE), config.yaml, 'utf8');
+  if (config.hasTransform) {
+    fs.writeFileSync(path.join(cwd, SCRIPT_FILE), config.script ?? '', 'utf8');
+  }
+}
+
+/** Persists conf.yaml (and scripts.js) to the daemon folder without running the pipeline. */
+async function handleSaveConfig(
+  cwd: string,
+  request: http.IncomingMessage,
+  response: http.ServerResponse
+): Promise<void> {
+  let body: RunRequest;
+  try {
+    body = await readJsonBody(request);
+  } catch (error: any) {
+    sendJson(response, 400, { error: error.message });
+    return;
+  }
+  if (!body.yaml || !body.yaml.trim()) {
+    sendJson(response, 400, { error: 'Missing YAML configuration.' });
+    return;
+  }
+  try {
+    writeFolderConfig(cwd, { yaml: body.yaml, script: body.script, hasTransform: body.hasTransform });
+  } catch (error: any) {
+    sendJson(response, 500, { error: `Could not write configuration files: ${error.message}` });
+    return;
+  }
+  sendJson(response, 200, { ok: true });
+}
+
 async function handleAuth(cwd: string, response: http.ServerResponse): Promise<void> {
   const envCredential = detectEnvCredential(cwd);
   const { sfAvailable, orgs } = await listOrgs();
@@ -249,10 +294,7 @@ async function handleRun(
 
   // Write conf.yaml, and scripts.js only when the pipeline has a transform action.
   try {
-    fs.writeFileSync(path.join(cwd, CONF_FILE), body.yaml, 'utf8');
-    if (body.hasTransform) {
-      fs.writeFileSync(path.join(cwd, SCRIPT_FILE), body.script ?? '', 'utf8');
-    }
+    writeFolderConfig(cwd, { yaml: body.yaml, script: body.script, hasTransform: body.hasTransform });
   } catch (error: any) {
     sendJson(response, 500, { error: `Could not write configuration files: ${error.message}` });
     return;

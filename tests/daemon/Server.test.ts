@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildCliArgs, captureOutput, detectEnvCredential, readFolderConfig } from '../../src/daemon/Server';
+import { buildCliArgs, captureOutput, detectEnvCredential, readFolderConfig, writeFolderConfig } from '../../src/daemon/Server';
 
 const temporaryFolders: string[] = [];
 
@@ -106,5 +106,29 @@ describe('readFolderConfig', () => {
     const config = readFolderConfig(folder);
     expect(config.hasConf).toBe(true);
     expect(config.script).toBeNull();
+  });
+});
+
+describe('writeFolderConfig', () => {
+  it('writes conf.yaml and skips scripts.js without a transform', () => {
+    const folder = makeFolder();
+    writeFolderConfig(folder, { yaml: 'actions: []\n', hasTransform: false });
+    expect(fs.readFileSync(path.join(folder, 'conf.yaml'), 'utf8')).toContain('actions: []');
+    expect(fs.existsSync(path.join(folder, 'scripts.js'))).toBe(false);
+  });
+
+  it('writes scripts.js when a transform exists', () => {
+    const folder = makeFolder();
+    writeFolderConfig(folder, { yaml: 'actions: []\n', script: 'module.exports = {};\n', hasTransform: true });
+    expect(fs.readFileSync(path.join(folder, 'scripts.js'), 'utf8')).toContain('module.exports');
+  });
+
+  it('round-trips through readFolderConfig', () => {
+    const folder = makeFolder();
+    writeFolderConfig(folder, { yaml: 'actions: []\n', script: 'module.exports = {};\n', hasTransform: true });
+    const config = readFolderConfig(folder);
+    expect(config.hasConf).toBe(true);
+    expect(config.yaml).toContain('actions: []');
+    expect(config.script).toContain('module.exports');
   });
 });

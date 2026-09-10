@@ -4,7 +4,7 @@ import { ACTION_TYPES, actionDescription, createAction, sheetCatalog } from '../
 import { notify, replaceState, resetState, restoreDraft, state, subscribe, uid } from '../state.js';
 import { analyzeSharedScript, buildSharedScript, generateYaml, parseSharedScript, parseYaml } from '../yaml.js';
 import { esc, toast } from '../utils.js';
-import { checkDaemon, daemonPossible, fetchAuth, fetchConfig, loadSession, saveSession, runPipeline } from '../execute.js';
+import { checkDaemon, daemonPossible, fetchAuth, fetchConfig, loadSession, saveSession, saveConfig, runPipeline } from '../execute.js';
 import './sf-action-modal.js';
 import './sf-diagram-panel.js';
 
@@ -90,6 +90,7 @@ class SfGeneratorApp extends HTMLElement {
         <div class="header-actions">
           <span class="autosave-status"><span></span> Draft autosaved</span>
           <button class="button ghost" data-reset>Reset</button>
+          ${this.daemon ? `<button class="button secondary" data-save-config ${result.valid ? '' : 'disabled'}>Save to folder</button>` : ''}
           <button class="button secondary" data-copy ${result.valid ? '' : 'disabled'}>Copy YAML</button>
           <button class="button primary" data-download ${result.valid ? '' : 'disabled'}>Download</button>
         </div>
@@ -560,6 +561,7 @@ class SfGeneratorApp extends HTMLElement {
     });
     this.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => this.copyYaml()));
     this.querySelectorAll('[data-download]').forEach(button => button.addEventListener('click', () => this.downloadYaml()));
+    this.querySelectorAll('[data-save-config]').forEach(button => button.addEventListener('click', () => this.saveConfigToDaemon()));
     this.querySelectorAll('[data-reset]').forEach(button => button.addEventListener('click', () => {
       if (confirm('Reset the entire configuration? This clears the autosaved draft.')) resetState();
     }));
@@ -775,6 +777,27 @@ class SfGeneratorApp extends HTMLElement {
     // The CLI receives this file via --scriptFile; the YAML no longer names it.
     if (state.actions.some(action => action.type === 'transform')) {
       await this.saveFile(buildSharedScript(state), 'scripts.js', 'text/javascript', 'CommonJS JavaScript', ['.js', '.cjs']);
+    }
+  }
+
+  // Writes conf.yaml (and scripts.js) to the daemon's folder without running the pipeline,
+  // using the same serialization the Run flow produces so a saved-then-run file is identical.
+  async saveConfigToDaemon() {
+    const result = generateYaml(state);
+    if (!result.valid) {
+      toast('Fix configuration issues before saving.', 'warning');
+      return;
+    }
+    const hasTransform = state.actions.some(action => action.type === 'transform');
+    try {
+      await saveConfig({
+        yaml: result.yaml,
+        script: hasTransform ? buildSharedScript(state) : undefined,
+        hasTransform,
+      });
+      toast(`Saved conf.yaml${hasTransform ? ' and scripts.js' : ''} to the daemon folder`);
+    } catch (error) {
+      toast(`Save failed: ${error.message}`, 'error', 6000);
     }
   }
 
