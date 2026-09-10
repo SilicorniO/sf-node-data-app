@@ -40,7 +40,7 @@ class SfGeneratorApp extends HTMLElement {
   connectedCallback() {
     restoreDraft();
     this.unsubscribe = subscribe(reason => {
-      if (reason === 'input') this.refreshPreview();
+      if (reason === 'input') this.refreshValidation();
       else this.render();
     });
     this.render();
@@ -50,9 +50,9 @@ class SfGeneratorApp extends HTMLElement {
   // Detects the daemon once, then loads the local auth environment so the Run tab
   // can offer the org picker / paste-token flow.
   async detectDaemon() {
-    if (!daemonPossible()) return;
+    if (!daemonPossible()) return this.renderDaemonNotice();
     const status = await checkDaemon();
-    if (!status) return;
+    if (!status) return this.renderDaemonNotice();
     this.daemon = status;
     // Disk wins: when the daemon's folder already has a conf.yaml, load it (and its
     // scripts.js) through the normal import path, replacing the autosaved draft.
@@ -80,6 +80,19 @@ class SfGeneratorApp extends HTMLElement {
     this.unsubscribe?.();
   }
 
+  // The builder only works when served by the local UI daemon. When it is opened as a
+  // file:// document, or the daemon is not reachable, replace the whole UI with a notice.
+  renderDaemonNotice() {
+    this.innerHTML = `
+      <div class="daemon-required">
+        <div class="brand-mark">SF</div>
+        <h1>sf-data</h1>
+        <p>Start the local UI daemon to use the builder.</p>
+        <pre><code>sfdata --ui</code></pre>
+        <p class="hint">Then open the page it serves. Opening this file directly won't work.</p>
+      </div>`;
+  }
+
   render() {
     const result = generateYaml(state);
     this.validation = result;
@@ -89,54 +102,50 @@ class SfGeneratorApp extends HTMLElement {
         <div class="brand">
           <div class="brand-mark">SF</div>
           <div>
-            <h1>YAML Configuration Generator</h1>
-            <p>Build a clear, validated Salesforce data pipeline.</p>
+            <h1>sf-data</h1>
+            <p>Salesforce data pipeline builder</p>
           </div>
         </div>
         <div class="header-actions">
           <span class="autosave-status"><span></span> Draft autosaved</span>
           <button class="button ghost" data-reset>Reset</button>
-          ${this.daemon ? `<button class="button secondary" data-save-config ${result.valid ? '' : 'disabled'}>Save to folder</button>` : ''}
-          <button class="button secondary" data-copy ${result.valid ? '' : 'disabled'}>Copy YAML</button>
-          <button class="button primary" data-download ${result.valid ? '' : 'disabled'}>Download</button>
+          <button class="button primary" data-save-config ${result.valid ? '' : 'disabled'}>Save</button>
         </div>
       </header>
+
+      ${result.valid ? '' : `<div class="validation-banner">${this.issueSummary()}</div>`}
 
       <nav class="mobile-tabs" aria-label="Generator sections">
         ${this.tabs()}
       </nav>
 
-      <main class="workspace ${state.activeTab === 'diagram' || state.activeTab === 'run' ? 'workspace-full' : ''}">
+      <main class="workspace workspace-full">
         <section class="editor-pane ${state.activeTab === 'diagram' ? 'editor-pane-diagram' : ''}">
-          <nav class="editor-tabs" aria-label="Configuration sections">${this.tabs(false)}</nav>
+          <nav class="editor-tabs" aria-label="Configuration sections">${this.tabs()}</nav>
           <div class="editor-scroll ${state.activeTab === 'diagram' ? 'editor-scroll-diagram' : ''}">
             ${state.activeTab === 'app' ? this.appPanel() : ''}
             ${state.activeTab === 'sheets' ? this.sheetsPanel() : ''}
             ${state.activeTab === 'actions' ? this.actionsPanel() : ''}
-            ${state.activeTab === 'preview' ? this.previewPanel(true) : ''}
             ${state.activeTab === 'diagram' ? '<sf-diagram-panel></sf-diagram-panel>' : ''}
             ${state.activeTab === 'run' ? this.runPanel() : ''}
           </div>
         </section>
-        ${state.activeTab === 'diagram' || state.activeTab === 'run' ? '' : `<aside class="preview-pane">${this.previewPanel(false)}</aside>`}
       </main>
 
       <sf-action-modal></sf-action-modal>
-      <input type="file" id="yaml-file" accept=".yaml,.yml,.js,.cjs,text/yaml,text/javascript" multiple hidden>
       <input type="file" id="input-files" accept=".csv,.xlsx,.xls,text/csv" multiple hidden>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>`;
     this.bind();
   }
 
-  tabs(includePreview = true) {
+  tabs() {
     let n = 0;
     const items = [
       ['app', String(++n), 'App'],
       ['sheets', String(++n), `Sheets ${state.sheets.length ? `(${state.sheets.length})` : ''}`],
       ['actions', String(++n), `Actions ${state.actions.length ? `(${state.actions.length})` : ''}`],
-      ...(includePreview ? [['preview', String(++n), 'Preview']] : []),
       ['diagram', String(++n), 'Diagram'],
-      ...(this.daemon ? [['run', String(++n), '▶ Run']] : []),
+      ['run', String(++n), '▶ Run'],
     ];
     return items.map(([value, number, label]) => `
       <button class="tab ${state.activeTab === value ? 'active' : ''}" data-tab="${value}">
@@ -309,39 +318,6 @@ class SfGeneratorApp extends HTMLElement {
         <button class="icon-button danger" data-remove-action="${index}" title="Delete">×</button>
       </div>
     </article>`;
-  }
-
-  previewPanel(mobile) {
-    const valid = this.validation.valid;
-    return `<section class="preview-card ${mobile ? 'mobile-preview' : ''}">
-      <div class="preview-header">
-        <div>
-          <p class="eyebrow">Live output</p>
-          <h2>Configuration YAML</h2>
-        </div>
-        <span class="validation-status ${valid ? 'valid' : 'invalid'}">${valid ? '✓ Valid' : `! ${this.validation.issues.length} issues`}</span>
-      </div>
-      ${valid ? '' : `
-        <div class="error-summary">
-          <strong>Fix these fields before copying or downloading:</strong>
-          <ul>${this.validation.issues.slice(0, 8).map((issue, index) => `
-            <li><button data-issue="${index}"><code>${esc(issue.pathText || 'configuration')}</code> ${esc(issue.message)}</button></li>`).join('')}</ul>
-        </div>`}
-      <pre class="yaml-preview"><code>${esc(this.lastValidYaml || '# Complete the required fields to generate YAML.')}</code></pre>
-      <div class="preview-actions">
-        <button class="button secondary" data-copy ${valid ? '' : 'disabled'}>Copy</button>
-        <button class="button primary" data-download ${valid ? '' : 'disabled'}>Download conf.yaml</button>
-      </div>
-      <details class="import-panel">
-        <summary>Import existing YAML</summary>
-        <p>Canonical YAML is validated and normalized. Comments and formatting are not preserved. Select the <code>conf.yaml</code> and its shared script file together to preload every transform.</p>
-        <textarea id="yaml-import-text" rows="6" placeholder="Paste YAML here…"></textarea>
-        <div class="import-actions">
-          <button class="button ghost" data-choose-file>Choose .yaml + script</button>
-          <button class="button secondary" data-import-text>Load pasted YAML</button>
-        </div>
-      </details>
-    </section>`;
   }
 
   runPanel() {
@@ -565,20 +541,9 @@ class SfGeneratorApp extends HTMLElement {
       else state.actions[index] = action;
       notify('structure');
     });
-    this.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => this.copyYaml()));
-    this.querySelectorAll('[data-download]').forEach(button => button.addEventListener('click', () => this.downloadYaml()));
     this.querySelectorAll('[data-save-config]').forEach(button => button.addEventListener('click', () => this.saveConfigToDaemon()));
     this.querySelectorAll('[data-reset]').forEach(button => button.addEventListener('click', () => {
       if (confirm('Reset the entire configuration? This clears the autosaved draft.')) resetState();
-    }));
-    this.querySelectorAll('[data-choose-file]').forEach(button => button.addEventListener('click', () => this.querySelector('#yaml-file').click()));
-    this.querySelector('#yaml-file').addEventListener('change', event => {
-      this.importFiles(Array.from(event.target.files || []));
-      event.target.value = '';
-    });
-    this.querySelectorAll('[data-import-text]').forEach(button => button.addEventListener('click', () => {
-      const text = button.closest('.preview-card').querySelector('#yaml-import-text').value;
-      this.importText(text);
     }));
     this.querySelectorAll('[data-issue]').forEach(button => button.addEventListener('click', () => {
       const issue = this.validation.issues[Number(button.dataset.issue)];
@@ -700,42 +665,18 @@ class SfGeneratorApp extends HTMLElement {
     return 'the .env-configured org';
   }
 
-  refreshPreview() {
+  // A field edit ('input') recomputes validation so the top error banner and the
+  // Save/Run enabled state stay in sync. A full re-render is cheap and keeps the
+  // banner's [data-issue] handlers wired without any surgical DOM patching.
+  refreshValidation() {
     const result = generateYaml(state);
     this.validation = result;
     if (result.valid) this.lastValidYaml = result.yaml;
-    this.querySelectorAll('.preview-card').forEach(card => {
-      const code = card.querySelector('.yaml-preview code');
-      if (code) code.textContent = this.lastValidYaml || '# Complete the required fields to generate YAML.';
-      const status = card.querySelector('.validation-status');
-      if (status) {
-        status.className = `validation-status ${result.valid ? 'valid' : 'invalid'}`;
-        status.textContent = result.valid ? '✓ Valid' : `! ${result.issues.length} issues`;
-      }
-      const existingSummary = card.querySelector('.error-summary');
-      if (result.valid) {
-        existingSummary?.remove();
-      } else {
-        const summary = document.createElement('div');
-        summary.className = 'error-summary';
-        summary.innerHTML = this.issueSummary();
-        summary.querySelectorAll('[data-issue]').forEach(button => button.addEventListener('click', () => {
-          const issue = this.validation.issues[Number(button.dataset.issue)];
-          if (issue.actionIndex !== null) this.openAction(issue.actionIndex, undefined, issue.path[2]);
-          else {
-            state.activeTab = issue.section;
-            notify('tab');
-          }
-        }));
-        if (existingSummary) existingSummary.replaceWith(summary);
-        else card.querySelector('.yaml-preview').before(summary);
-      }
-    });
-    this.querySelectorAll('[data-copy],[data-download]').forEach(button => { button.disabled = !result.valid; });
+    this.render();
   }
 
   issueSummary() {
-    return `<strong>Fix these fields before copying or downloading:</strong>
+    return `<strong>Fix these fields before saving or running:</strong>
       <ul>${this.validation.issues.slice(0, 8).map((issue, index) => `
         <li><button data-issue="${index}"><code>${esc(issue.pathText || 'configuration')}</code> ${esc(issue.message)}</button></li>`).join('')}</ul>`;
   }
@@ -750,40 +691,6 @@ class SfGeneratorApp extends HTMLElement {
       others,
       focusField
     );
-  }
-
-  async copyYaml() {
-    const result = generateYaml(state);
-    if (!result.valid) return;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(result.yaml);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = result.yaml;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        textarea.remove();
-      }
-      toast('YAML copied');
-    } catch {
-      toast('Clipboard access was blocked; select the preview text manually.', 'error');
-    }
-  }
-
-  async downloadYaml() {
-    const result = generateYaml(state);
-    if (!result.valid) return;
-    await this.saveFile(result.yaml, 'conf.yaml', 'text/yaml', 'YAML configuration', ['.yaml', '.yml']);
-
-    // Transform scripts travel in a single shared file so importing preloads them all.
-    // The CLI receives this file via --scriptFile; the YAML no longer names it.
-    if (state.actions.some(action => actionUsesScript(action))) {
-      await this.saveFile(buildSharedScript(state), 'scripts.js', 'text/javascript', 'CommonJS JavaScript', ['.js', '.cjs']);
-    }
   }
 
   // Writes conf.yaml (and scripts.js) to the daemon's folder without running the pipeline,
@@ -805,30 +712,6 @@ class SfGeneratorApp extends HTMLElement {
     } catch (error) {
       toast(`Save failed: ${error.message}`, 'error', 6000);
     }
-  }
-
-  async saveFile(content, suggestedName, mime, description, extensions) {
-    if (window.showSaveFilePicker) {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName,
-          types: [{ description, accept: { [mime]: extensions } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(content);
-        await writable.close();
-        toast(`Saved ${handle.name}`);
-        return;
-      } catch (error) {
-        if (error.name === 'AbortError') return;
-      }
-    }
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([content], { type: mime }));
-    link.download = suggestedName;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    toast(`${suggestedName} downloaded`);
   }
 
   async loadInputFiles(files) {
@@ -904,29 +787,10 @@ class SfGeneratorApp extends HTMLElement {
       });
   }
 
-  async importFiles(files) {
-    if (!files.length) return;
-    const isYaml = file => /\.ya?ml$/i.test(file.name);
-    const yamlFile = files.find(isYaml);
-    const scriptFile = files.find(file => !isYaml(file));
-    if (!yamlFile) {
-      toast('Choose a .yaml file to import', 'warning');
-      return;
-    }
-    try {
-      const yamlText = await yamlFile.text();
-      const scriptText = scriptFile ? await scriptFile.text() : '';
-      this.importText(yamlText, scriptText);
-    } catch (error) {
-      toast(`Could not read that file: ${error.message}`, 'error', 6000);
-    }
-  }
-
+  // Loads a YAML config (and its shared script) into the editor state. Used by the
+  // daemon disk-load path in detectDaemon() to preload an existing conf.yaml.
   importText(text, scriptText = '', successMessage = 'Configuration imported and normalized') {
-    if (!text.trim()) {
-      toast('Paste YAML or choose a file first', 'warning');
-      return;
-    }
+    if (!text.trim()) return;
     try {
       const configuration = parseYaml(text);
       replaceState(configuration, 'import');

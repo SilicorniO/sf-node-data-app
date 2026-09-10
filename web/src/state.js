@@ -89,7 +89,7 @@ function normalizeState(value = {}) {
       id: action.id || uid(),
       fields: action.fields ? [...action.fields] : undefined,
     })),
-    activeTab: ['app', 'sheets', 'actions', 'preview', 'diagram', 'run'].includes(value.activeTab)
+    activeTab: ['app', 'sheets', 'actions', 'diagram', 'run'].includes(value.activeTab)
       ? value.activeTab
       : 'app',
   };

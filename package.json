@@ -9,11 +9,12 @@
   },
   "scripts": {
     "test": "vitest run",
-    "build": "npx tsc",
-    "build:executables": "npm run build && pkg .",
+    "build": "npm run build:cli && npm run build:web",
+    "build:cli": "npx tsc",
     "build:web": "node web/build.mjs",
+    "build:executables": "npm run build && pkg .",
     "dev:web": "npm run build:web && npx serve dist-web -l 3001 --no-port-switching",
-    "ui": "npm run build && npm run build:web && node dist/Index.js --ui"
+    "ui": "npm run build && node dist/Index.js --ui"
   },
   "keywords": [],
   "author": "",
