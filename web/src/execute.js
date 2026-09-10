@@ -38,6 +38,13 @@ export async function fetchConfig() {
   return response.json();
 }
 
+/** Fetches the CSV/Excel files present in the daemon's ./input folder (name + headers). */
+export async function fetchInputs() {
+  const response = await fetch('/inputs', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Inputs check failed (${response.status})`);
+  return response.json();
+}
+
 /**
  * Persists conf.yaml (and scripts.js) to the daemon's folder without running the pipeline.
  * @param payload { yaml, script?, hasTransform }

@@ -4,7 +4,7 @@ import { ACTION_TYPES, actionDescription, createAction, sheetCatalog } from '../
 import { notify, replaceState, resetState, restoreDraft, state, subscribe, uid } from '../state.js';
 import { analyzeSharedScript, buildSharedScript, generateYaml, parseSharedScript, parseYaml } from '../yaml.js';
 import { esc, toast } from '../utils.js';
-import { checkDaemon, daemonPossible, fetchAuth, fetchConfig, loadSession, saveSession, saveConfig, runPipeline } from '../execute.js';
+import { checkDaemon, daemonPossible, fetchAuth, fetchConfig, fetchInputs, loadSession, saveSession, saveConfig, runPipeline } from '../execute.js';
 import './sf-action-modal.js';
 import './sf-diagram-panel.js';
 
@@ -63,6 +63,15 @@ class SfGeneratorApp extends HTMLElement {
       }
     } catch {
       /* no config on disk, or unreadable — keep the current draft */
+    }
+    // Scan the daemon's ./input folder and register any CSV/Excel files as sheets so
+    // the action lookup fields prefill. Runs after the disk-config load so a loaded
+    // conf.yaml's sheets already count as existing and are not overwritten.
+    try {
+      const { sheets = [] } = await fetchInputs();
+      this.mergeInputSheets(sheets);
+    } catch {
+      /* no input folder, or unreadable — leave the draft as-is */
     }
     try {
       this.auth = await fetchAuth();
@@ -752,6 +761,30 @@ class SfGeneratorApp extends HTMLElement {
       toast(`Loaded headers from ${files.length} input ${files.length === 1 ? 'file' : 'files'}`);
     } catch (error) {
       toast(`Could not inspect input files: ${error.message}`, 'error', 6000);
+    }
+  }
+
+  // Registers sheets discovered in the daemon's ./input folder on load. Fill-gaps
+  // only: sheets whose name already exists (manually added or loaded from conf.yaml)
+  // are left untouched, and there is no confirm() prompt, so startup stays silent.
+  mergeInputSheets(discovered) {
+    let added = 0;
+    for (const sheet of discovered) {
+      if (!sheet.name || !(sheet.fields || []).length) continue;
+      const exists = state.sheets.some(existing => existing.name.toLowerCase() === sheet.name.toLowerCase());
+      if (exists) continue;
+      state.sheets.push({
+        id: uid(),
+        name: sheet.name,
+        source: sheet.source,
+        collapsed: true,
+        fields: sheet.fields.map(header => ({ id: uid(), name: header, apiName: '', translate: false })),
+      });
+      added += 1;
+    }
+    if (added) {
+      notify('structure');
+      toast(`Loaded ${added} input ${added === 1 ? 'sheet' : 'sheets'} from the daemon folder`);
     }
   }
 

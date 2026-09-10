@@ -10,6 +10,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { listOrgs, resolveOrgToken, SfTokenError } from './SfOrgs';
+import { CsvReader } from '../reader/CsvReader';
+import { ExcelReader } from '../reader/ExcelReader';
 
 const DEFAULT_PORT = 3111;
 const CONF_FILE = 'conf.yaml';
@@ -17,6 +19,8 @@ const SCRIPT_FILE = 'scripts.js';
 const INPUT_FOLDER = './input';
 const OUTPUT_FOLDER = './output';
 const RESULT_MARKER = '__SFDATA_RESULT__';
+const CSV_FILE_SUFFIX = '.csv';
+const EXCEL_FILE_SUFFIXES = ['.xlsx', '.xls', '.xlsm', '.xlsb'];
 
 export interface StartUiServerOptions {
   port?: number;
@@ -138,6 +142,10 @@ export function startUiServer(options: StartUiServerOptions = {}): http.Server {
       handleConfig(cwd, response);
       return;
     }
+    if (request.method === 'GET' && route === '/inputs') {
+      handleInputs(cwd, response);
+      return;
+    }
     if (request.method === 'POST' && route === '/config') {
       handleSaveConfig(cwd, request, response);
       return;
@@ -184,6 +192,63 @@ function serveGenerator(response: http.ServerResponse): void {
  */
 function handleConfig(cwd: string, response: http.ServerResponse): void {
   sendJson(response, 200, readFolderConfig(cwd));
+}
+
+/** A discovered input sheet: logical name plus its column headers and origin. */
+export interface DiscoveredInputSheet {
+  name: string;
+  source: { kind: 'csv' | 'excel'; fileName: string; worksheet?: string };
+  fields: string[];
+}
+
+/**
+ * Scans the daemon's ./input folder (non-recursively) and returns each CSV/Excel
+ * file as a sheet with its column headers, so the browser can prefill the sheet
+ * and field lookups on load. A missing folder is normal (returns no sheets), and a
+ * single unreadable file is skipped rather than failing the whole scan.
+ */
+export function scanInputSheets(cwd: string): DiscoveredInputSheet[] {
+  const folder = path.join(cwd, INPUT_FOLDER);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(folder, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const sheets: DiscoveredInputSheet[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const filePath = path.join(folder, entry.name);
+    const suffix = path.extname(entry.name).toLowerCase();
+    try {
+      if (suffix === CSV_FILE_SUFFIX) {
+        const dataSheet = CsvReader.readCsvFileSync(filePath);
+        sheets.push({
+          name: dataSheet.name,
+          source: { kind: 'csv', fileName: entry.name },
+          fields: [...dataSheet.fieldNames],
+        });
+      } else if (EXCEL_FILE_SUFFIXES.includes(suffix)) {
+        for (const worksheet of ExcelReader.listSheetNames(filePath)) {
+          const dataSheet = ExcelReader.readWorksheetSync(filePath, worksheet);
+          sheets.push({
+            name: worksheet,
+            source: { kind: 'excel', fileName: entry.name, worksheet },
+            fields: [...dataSheet.fieldNames],
+          });
+        }
+      }
+    } catch {
+      // Skip files that cannot be read/parsed; the rest of the folder still loads.
+    }
+  }
+  return sheets;
+}
+
+/** Returns the CSV/Excel files present in the daemon's ./input folder (name + headers). */
+function handleInputs(cwd: string, response: http.ServerResponse): void {
+  sendJson(response, 200, { sheets: scanInputSheets(cwd) });
 }
 
 /** Reads conf.yaml / scripts.js from a folder, returning nulls when absent. */
