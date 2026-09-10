@@ -21,7 +21,7 @@ afterEach(() => {
 describe('buildCliArgs', () => {
   it('uses fixed conventions and omits the script when there is no transform', () => {
     const args = buildCliArgs({ yaml: 'x', hasTransform: false });
-    expect(args).toEqual(['--confFile', 'conf.yaml', '--inputFolder', '.', '--outputFolder', './output']);
+    expect(args).toEqual(['--confFile', 'conf.yaml', '--inputFolder', './input', '--outputFolder', './output']);
   });
 
   it('adds --scriptFile only when a transform exists', () => {

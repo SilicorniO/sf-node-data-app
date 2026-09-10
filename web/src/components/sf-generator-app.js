@@ -388,7 +388,7 @@ class SfGeneratorApp extends HTMLElement {
         <div><p class="eyebrow">Execute</p><h2>Run pipeline</h2></div>
         <span class="daemon-status ok">● Daemon connected${this.daemon?.cwd ? ` · ${esc(this.daemon.cwd)}` : ''}</span>
       </div>
-      <p class="section-intro">Runs the pipeline in the daemon's folder. The current <code>conf.yaml</code>${state.actions.some(a => actionUsesScript(a)) ? ' and <code>scripts.js</code>' : ''} are written before execution, exactly as if you had saved and run the CLI there.</p>
+      <p class="section-intro">Runs the pipeline in the daemon's folder. The current <code>conf.yaml</code>${state.actions.some(a => actionUsesScript(a)) ? ' and <code>scripts.js</code>' : ''} are written before execution, exactly as if you had saved and run the CLI there. Place input files in the <code>input/</code> subfolder of the daemon folder; results are written to <code>output/</code>.</p>
 
       <div class="card run-config">
         <div class="run-field-group">

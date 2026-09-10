@@ -14,6 +14,7 @@ import { listOrgs, resolveOrgToken, SfTokenError } from './SfOrgs';
 const DEFAULT_PORT = 3111;
 const CONF_FILE = 'conf.yaml';
 const SCRIPT_FILE = 'scripts.js';
+const INPUT_FOLDER = './input';
 const OUTPUT_FOLDER = './output';
 const RESULT_MARKER = '__SFDATA_RESULT__';
 
@@ -293,8 +294,11 @@ async function handleRun(
   }
 
   // Write conf.yaml, and scripts.js only when the pipeline has a transform action.
+  // Ensure the input folder exists so a pipeline with no input files (e.g. starting
+  // with a get action) does not fail when the CLI scans a missing "./input" folder.
   try {
     writeFolderConfig(cwd, { yaml: body.yaml, script: body.script, hasTransform: body.hasTransform });
+    fs.mkdirSync(path.join(cwd, INPUT_FOLDER), { recursive: true });
   } catch (error: any) {
     sendJson(response, 500, { error: `Could not write configuration files: ${error.message}` });
     return;
@@ -368,7 +372,7 @@ export function captureOutput(line: string, outputs: Array<{ name: string; rows:
 export function buildCliArgs(body: RunRequest): string[] {
   const args = [
     '--confFile', CONF_FILE,
-    '--inputFolder', '.',
+    '--inputFolder', INPUT_FOLDER,
     '--outputFolder', OUTPUT_FOLDER,
   ];
   if (body.hasTransform) {

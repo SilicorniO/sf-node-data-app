@@ -23,7 +23,9 @@ const suite = built ? describe : describe.skip;
 beforeAll(async () => {
   if (!built) return;
   workFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'sfdata-run-'));
-  fs.copyFileSync(path.join(EXAMPLE, 'employees.csv'), path.join(workFolder, 'employees.csv'));
+  // The daemon reads inputs from the "input" subfolder (--inputFolder ./input).
+  fs.mkdirSync(path.join(workFolder, 'input'), { recursive: true });
+  fs.copyFileSync(path.join(EXAMPLE, 'employees.csv'), path.join(workFolder, 'input', 'employees.csv'));
   server = startUiServer({ port: 0, cwd: workFolder });
   await new Promise<void>(resolve => server.once('listening', () => resolve()));
   port = (server.address() as any).port;
