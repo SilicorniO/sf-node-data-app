@@ -10,7 +10,7 @@
   "scripts": {
     "test": "vitest run",
     "build": "npm run build:cli && npm run build:web",
-    "build:cli": "npx tsc",
+    "build:cli": "npx tsc && node scripts/copy-ai.mjs",
     "build:web": "node web/build.mjs",
     "build:executables": "npm run build && pkg .",
     "dev:web": "npm run build:web && npx serve dist-web -l 3001 --no-port-switching",
@@ -55,7 +55,8 @@
       "node_modules/axios/**/*",
       "node_modules/better-sqlite3/prebuilds/**/*.node",
       "config/**/*",
-      "data/**/*"
+      "data/**/*",
+      "dist/ai/**/*"
     ],
     "targets": [
       "node18-win-x64",

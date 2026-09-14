@@ -22,6 +22,7 @@ import { DataSheetProcessor } from './processor/DataSheetProcessor';
 import { OutputCleaner } from './processor/OutputCleaner';
 import { SheetRegistry } from './processor/SheetRegistry';
 import { startUiServer } from './daemon/Server';
+import { initializeProject } from './init/ProjectInitializer';
 
 const CSV_FILE_SUFFIX = '.csv';
 const EXCEL_FILE_SUFFIXES = ['.xlsx', '.xls', '.xlsm', '.xlsb'];
@@ -116,11 +117,46 @@ function runUiMode(): void {
   startUiServer({ port, cwd });
 }
 
+/**
+ * Scaffolds a base sf-data project (input/output folders, conf.yaml, scripts.js, AI_GUIDE.md,
+ * and the skills/ folder) in the folder the command was run from. Like `runUiMode`, this is a
+ * distinct mode that does not require --confFile.
+ */
+function runInitMode(): void {
+  // Same rationale as runUiMode: `npm run` rewrites process.cwd() to the package root but
+  // preserves the real invocation directory in INIT_CWD, so prefer that when present.
+  const cwd = process.env.INIT_CWD || process.cwd();
+  console.log('SF Data project initializer');
+  console.log(`Creating base project in: ${cwd}`);
+  try {
+    const result = initializeProject(cwd);
+    for (const item of result.created) {
+      console.log(`  + created ${item}`);
+    }
+    for (const item of result.skipped) {
+      console.log(`  = skipped ${item} (already exists)`);
+    }
+    console.log(
+      `Done: ${result.created.length} item(s) created, ${result.skipped.length} left untouched.`
+    );
+  } catch (error: any) {
+    console.error(`FAILED to initialize project: ${error.message}`);
+    process.exitCode = 1;
+  }
+}
+
 async function main(): Promise<void> {
   dotenv.config();
   // `--ui` switches to daemon mode, where --confFile is not required.
   if (process.argv.includes('--ui')) {
     runUiMode();
+    return;
+  }
+  // `init` scaffolds a base project; like --ui it must be handled before the required
+  // --confFile option is defined. Match the positional argument exactly so a confFile path
+  // containing "init" is not mistaken for the subcommand.
+  if (process.argv[2] === 'init') {
+    runInitMode();
     return;
   }
   const program = new Command()
