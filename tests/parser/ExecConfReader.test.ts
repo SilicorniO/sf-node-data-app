@@ -9,6 +9,7 @@ import { TransformAction } from '../../src/model/TransformAction';
 import { UpdateAction } from '../../src/model/UpdateAction';
 import { UpsertAction } from '../../src/model/UpsertAction';
 import { CheckAction } from '../../src/model/CheckAction';
+import { MillerAction } from '../../src/model/MillerAction';
 
 const allActionsYaml = `
 actions:
@@ -86,6 +87,24 @@ actions:
   - { type: check, name: Standalone }
 `, '/configuration/scripts.js');
     expect((configuration.actions[0] as CheckAction).inputSheets).toEqual([]);
+  });
+
+  it('parses a miller action without requiring a script file', () => {
+    const configuration = ExecConfReader.parseConf(`
+actions:
+  - type: miller
+    name: Sort Employees
+    inputSheets: [employees, extra]
+    outputSheet: employees-sorted
+    command: "sort -nr Salary"
+`);
+    expect(configuration.actions).toHaveLength(1);
+    const action = configuration.actions[0];
+    expect(action).toBeInstanceOf(MillerAction);
+    expect((action as MillerAction).inputSheets).toEqual(['employees', 'extra']);
+    expect((action as MillerAction).outputSheet).toBe('employees-sorted');
+    expect((action as MillerAction).command).toBe('sort -nr Salary');
+    expect(action).toMatchObject({ continueOnError: false, errorSheet: 'Sort Employees-errors' });
   });
 
   it('trims values and parses app and sheet mapping defaults', () => {
@@ -192,6 +211,11 @@ actions:
     ['check without a script file', `actions:\n  - { type: check, name: Check, inputSheets: [A] }`, undefined],
     ['check with duplicate input sheets', `actions:\n  - { type: check, name: Check, inputSheets: [A, a] }`, './scripts.js'],
     ['check error sheet collision', `actions:\n  - { type: check, name: Check, inputSheets: [A], errorSheet: a }`, './scripts.js'],
+    ['miller with no input sheets', `actions:\n  - { type: miller, name: M, inputSheets: [], outputSheet: B, command: "cat" }`],
+    ['miller with duplicate input sheets', `actions:\n  - { type: miller, name: M, inputSheets: [A, a], outputSheet: B, command: "cat" }`],
+    ['miller command starting with mlr', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "mlr cat" }`],
+    ['miller command setting csv format', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "--csv cat" }`],
+    ['miller error sheet collision', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "cat", errorSheet: b }`],
   ])('rejects %s', (_description, yaml, scriptFile) => {
     expect(() => ExecConfReader.parseConf(yaml, scriptFile)).toThrow(/Error parsing configuration/);
   });
@@ -202,7 +226,7 @@ actions:
       .map(entry => path.join(examplesDirectory, entry, 'conf.yaml'))
       .filter(file => fs.existsSync(file));
 
-    expect(configurationPaths).toHaveLength(8);
+    expect(configurationPaths).toHaveLength(9);
     for (const configurationPath of configurationPaths) {
       // Examples keep their shared transform script next to conf.yaml; pass it like the CLI would.
       const scriptPath = path.join(path.dirname(configurationPath), 'scripts.js');

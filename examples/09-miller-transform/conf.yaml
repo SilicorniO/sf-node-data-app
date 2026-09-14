@@ -1,0 +1,16 @@
+appConfiguration:
+  processingType: "bulk"
+  apiVersion: "63.0"
+
+actions:
+  - name: "Sort Employees By Salary"
+    type: "miller"
+    inputSheets: ["employees"]
+    outputSheet: "employees-sorted"
+    command: "sort -nr Salary"
+
+  - name: "Top Earners In Engineering"
+    type: "miller"
+    inputSheets: ["employees-sorted"]
+    outputSheet: "engineering-top-earners"
+    command: "filter '$Department == \"Engineering\"' then cut -f FirstName,LastName,Salary"

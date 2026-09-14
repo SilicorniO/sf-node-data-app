@@ -66,7 +66,7 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
 | Field | Default | Meaning |
 |---|---|---|
 | `name` | (required) | Unique logical name. No `/ \ ..` or control chars. |
-| `type` | (required) | `get`/`insert`/`update`/`upsert`/`delete`/`transform`/`merge`/`check` |
+| `type` | (required) | `get`/`insert`/`update`/`upsert`/`delete`/`transform`/`merge`/`check`/`miller` |
 | `waitBeforeSeconds` | `0` | Delay before running this action |
 | `continueOnError` | `false` | If `true`, row errors don't halt the pipeline |
 | `errorSheet` | `<name>-errors` | Sheet/CSV for failed rows (adds `_ErrorMessage`) |
@@ -129,10 +129,24 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
   type: "check"
   inputSheets: ["employees"]            # one or more sheets passed to the function
   continueOnError: false                # false return -> one-row error sheet + stop unless continueOnError
+
+# MILLER — transform CSV with Miller/mlr (local, no Salesforce; requires `mlr` on PATH)
+- name: "Sort Employees"
+  type: "miller"
+  inputSheets: ["employees"]            # one or more; passed to mlr in order (multi = join verbs)
+  outputSheet: "employees-sorted"       # required; captures mlr's stdout
+  command: "sort -nr Salary"            # required; the verb chain ONLY
 ```
 
 `check` runs a JS function (from `--scriptFile`) that returns a boolean. See §2 for its
 signature — it differs from a transform function.
+
+`miller` needs **no** `--scriptFile`. `command` is the Miller **verb chain only**: the app
+runs `mlr --csv <command> <input file(s)>` and captures stdout as `outputSheet`, so never put
+`mlr`, `--csv`, or file paths in it. The command is tokenized in-process (single/double quotes
+respected) and passed to `mlr` as an argv array — never through a shell, so DSL expressions like
+`filter '$age > 30'` and chained verbs (`... then cut -f Name`) are safe. `mlr` must be installed
+and on `PATH`, or the run fails at preflight.
 
 ---
 
@@ -264,7 +278,7 @@ npx ts-node src/Index.ts --confFile <conf.yaml> --scriptFile <scripts.js> \
 ```
 
 Phases: load+validate YAML → prepare output folder → index inputs → field mappings + SF auth
-(only if a Salesforce action is in range; `transform`, `check`, and `merge` are offline) →
+(only if a Salesforce action is in range; `transform`, `check`, `merge`, and `miller` are offline) →
 run selected actions in order (streaming output) → flush remaining sheets. Exit code 1 on
 failure; accepted row-errors still exit 0.
 
@@ -306,13 +320,14 @@ Use `--fromTask`/`--toTask` to run a sub-range of the pipeline (e.g. re-run only
 ## 6. Salesforce authentication (env vars / `.env`)
 
 Precedence: **bearer token → client credentials → Salesforce CLI**.
-Auth is only performed when the run includes a non-`transform`/`check`/`merge` action.
+Auth is only performed when the run includes a non-`transform`/`check`/`merge`/`miller` action.
 
 - **Bearer:** `SF_ACCESS_TOKEN` + `SF_INSTANCE_URL` (both required).
 - **Client credentials:** `SF_CLIENT_ID` + `SF_CLIENT_SECRET` + `SF_INSTANCE_URL` (all three).
 - **SF CLI fallback:** none set → uses the active org via the `sf` CLI.
 
-Pure `transform`/`check`/`merge`-only pipelines need no Salesforce credentials.
+Pure `transform`/`check`/`merge`/`miller`-only pipelines need no Salesforce credentials.
+(`miller` additionally requires the `mlr` binary on `PATH`.)
 
 ---
 
@@ -358,6 +373,7 @@ node dist/Index.js -c myjob/conf.yaml -s myjob/scripts.js -v myjob/contacts.csv 
 - [ ] Every `inputSheet` is either an input file's sheet or a prior action's `outputSheet`.
 - [ ] `fields` rules honored: insert excludes `Id`; update includes `Id`; upsert includes `externalIdField`.
 - [ ] If any transform or check exists, `--scriptFile` is passed and the shared file exports a function keyed by each transform/check action's `name`.
+- [ ] If any `miller` action exists, `mlr` is installed on `PATH` and each `command` is a verb chain only (no `mlr`, `--csv`, or file paths).
 - [ ] Inputs supplied via `-v`/`-e`/`-i`; sheet names don't collide.
 - [ ] SF auth env vars set if any get/insert/update/upsert/delete action runs.
 - [ ] `--outputFolder` set (not a protected path if cleaning is enabled).

@@ -155,6 +155,27 @@ class SfActionModal extends HTMLElement {
         </div>
       </div>`;
     }
+    if (action.type === 'miller') {
+      return `<div class="form-grid two">
+        <div class="field wide">
+          <span class="field-title-row">Input sheets</span>
+          <div class="chips">
+            ${(action.inputSheets || []).map((sheet, index) => `
+              <span class="chip">
+                ${esc(sheet)}
+                <button type="button" data-remove-input="${index}" aria-label="Remove ${esc(sheet)}">×</button>
+              </span>`).join('')}
+            <input id="new-input-sheet" type="text" list="sheet-suggestions" placeholder="Add a sheet, then Enter">
+          </div>
+          <small class="hint">One or more CSVs passed to <code>mlr</code> in order. The first is usually enough; add more for join-style verbs.</small>
+        </div>
+        ${this.field('outputSheet', 'Output sheet', action.outputSheet, { required: true, list: true, placeholder: 'employees-sorted' })}
+        ${this.field('command', 'Miller command', action.command, { required: true, textarea: true, wide: true, placeholder: 'sort -nr salary' })}
+        <div class="field wide">
+          <small class="hint">Verb chain only — the app runs <code>mlr --csv &lt;command&gt; &lt;input files&gt;</code> and writes the result to the output folder. Do not include <code>mlr</code>, <code>--csv</code>, or file paths. Example: <code>filter '$age &gt; 30' then sort -f name</code>.</small>
+        </div>
+      </div>`;
+    }
     const fields = action.type === 'delete' ? '' : this.fieldsEditor(action);
     const output = action.type === 'insert'
       ? this.field('outputSheet', 'ID output sheet', action.outputSheet, { list: true, placeholder: 'Optional: Inserted IDs' })

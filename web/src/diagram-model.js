@@ -37,6 +37,7 @@ function inputSheetsOf(action) {
   if (action.type === 'get') return [];
   if (action.type === 'transform') return [action.inputSheet];
   if (action.type === 'check') return action.inputSheets || [];
+  if (action.type === 'miller') return action.inputSheets || [];
   if (isWriteAction(action.type)) return [action.inputSheet];
   return [];
 }
@@ -44,7 +45,7 @@ function inputSheetsOf(action) {
 // The data sheet an action writes (single output CSV; error sheets handled apart).
 function outputSheetOf(action) {
   if (action.type === 'get') return action.outputSheet;
-  if (action.type === 'transform' || action.type === 'merge') return action.outputSheet;
+  if (action.type === 'transform' || action.type === 'merge' || action.type === 'miller') return action.outputSheet;
   if (action.type === 'insert') return action.outputSheet; // optional returned-Ids sheet
   return ''; // update/upsert/delete: no data output
 }
@@ -186,6 +187,13 @@ export function buildDiagramGraph(state, catalog = []) {
       const checkNode = makeCheckNode(column, index, action.name);
       (action.inputSheets || []).forEach(name => {
         pushEdge(resolveInput(name), checkNode, 'check', true);
+      });
+
+    } else if (action.type === 'miller') {
+      // Every input sheet --labeled--> [output CSV] (multiple vectors converge, like merge).
+      const out = outName ? makeSheetNode(outName, column, { supersedes: overwrites }) : null;
+      (action.inputSheets || []).forEach(name => {
+        pushEdge(resolveInput(name), out, 'miller', true);
       });
 
     } else if (isWriteAction(action.type)) {

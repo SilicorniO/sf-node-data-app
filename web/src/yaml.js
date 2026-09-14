@@ -125,6 +125,13 @@ export function buildActionConfiguration(action) {
       if (inputSheets.length) result.inputSheets = inputSheets;
       break;
     }
+    case 'miller': {
+      const inputSheets = cleanFields(action.inputSheets);
+      if (inputSheets.length) result.inputSheets = inputSheets;
+      result.outputSheet = value(action.outputSheet);
+      result.command = value(action.command);
+      break;
+    }
   }
   return result;
 }

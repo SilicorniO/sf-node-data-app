@@ -10,6 +10,7 @@ import { UpsertAction } from '../model/UpsertAction';
 import { DeleteAction } from '../model/DeleteAction';
 import { MergeAction } from '../model/MergeAction';
 import { CheckAction } from '../model/CheckAction';
+import { MillerAction } from '../model/MillerAction';
 import { AppConfiguration } from '../model/AppConfiguration';
 import { ExecConf } from '../model/ExecConf';
 import { SheetConf } from '../model/SheetConf';
@@ -121,6 +122,8 @@ export class ExecConfReader {
           throw new Error(`Check action "${action.name}" requires a shared script; pass it with --scriptFile.`);
         }
         return new CheckAction(action.name, action.inputSheets, scriptFilePath, options);
+      case 'miller':
+        return new MillerAction(action.name, action.inputSheets, action.outputSheet, action.command, options);
     }
   }
 }

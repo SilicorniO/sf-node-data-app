@@ -323,7 +323,7 @@ async function main(): Promise<void> {
     const selectedActions = actionRange!.end < actionRange!.start
       ? []
       : configuration.actions.slice(actionRange!.start, actionRange!.end + 1);
-    const offlineActionTypes = new Set(['transform', 'check', 'merge']);
+    const offlineActionTypes = new Set(['transform', 'check', 'merge', 'miller']);
     const requiresSalesforce = selectedActions.some(action => !offlineActionTypes.has(action.type));
     const authentication = configureSalesforceAuthentication(requiresSalesforce);
     console.log(`      Authentication: ${authentication}.`);

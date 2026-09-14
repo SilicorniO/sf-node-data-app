@@ -22,13 +22,17 @@ export class CsvProcessor {
   /**
    * Parses a CSV string into headers and data using PapaParse.
    * @param csvString The CSV string to parse.
+   * @param delimiter Optional explicit delimiter. When omitted, PapaParse
+   *   auto-detects it; pass ',' for known-comma sources so single-column output
+   *   (which has no delimiter to detect) still parses.
    * @returns An object containing headers and data.
    */
-  static parseCSV(csvString: string): { headers: string[]; data: string[][] } {
+  static parseCSV(csvString: string, delimiter?: string): { headers: string[]; data: string[][] } {
     // Use PapaParse to parse the CSV string
     const result = Papa.parse<string[]>(csvString, {
       header: false, // Do not treat the first row as headers
       skipEmptyLines: true, // Skip empty lines
+      ...(delimiter ? { delimiter } : {}),
     });
 
     if (result.errors.length > 0) {

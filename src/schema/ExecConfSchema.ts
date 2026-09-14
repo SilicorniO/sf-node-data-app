@@ -103,6 +103,31 @@ const checkActionSchema = z.object({
   ),
 }).strict();
 
+const millerActionSchema = z.object({
+  ...actionCommon,
+  type: z.literal('miller'),
+  inputSheets: z.array(safeLogicalName).min(1, 'must reference at least one input sheet').refine(
+    values => new Set(values.map(value => value.toLocaleLowerCase())).size === values.length,
+    'must not contain duplicate sheet names'
+  ),
+  outputSheet: safeLogicalName,
+  // The verb chain only. The app supplies `mlr --csv`, the input files, and the
+  // output redirection, so those must not appear here.
+  command: trimmed,
+}).strict().superRefine((action, context) => {
+  const command = action.command;
+  if (/^\s*mlr\b/i.test(command)) {
+    context.addIssue({ code: 'custom', path: ['command'], message: 'command must not start with "mlr"; the app adds it' });
+  }
+  if (/(^|\s)--(i|o|io)?csv\b/.test(command) || /(^|\s)--c2\w+\b/.test(command)) {
+    context.addIssue({ code: 'custom', path: ['command'], message: 'command must not set the CSV format; the app adds "--csv"' });
+  }
+  // Shell metacharacters (`; & | > <` etc.) are NOT rejected: the command is
+  // tokenized in-process and passed to execFile as an argv array with no shell, so
+  // they carry no shell meaning. Rejecting them would break legitimate Miller DSL
+  // expressions such as `filter '$age > 30'`.
+});
+
 export const actionSchema = z.union([
   getActionSchema,
   insertActionSchema,
@@ -112,6 +137,7 @@ export const actionSchema = z.union([
   transformActionSchema,
   mergeActionSchema,
   checkActionSchema,
+  millerActionSchema,
 ]);
 
 const appConfigurationSchema = z.object({

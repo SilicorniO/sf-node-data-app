@@ -10,6 +10,7 @@ import { UpdateAction } from '../model/UpdateAction';
 import { UpsertAction } from '../model/UpsertAction';
 import { WriteAction } from '../model/WriteAction';
 import { CheckAction } from '../model/CheckAction';
+import { MillerAction } from '../model/MillerAction';
 import { buildCountQuery, decideByCount } from '../salesforce/AutoModeSelector';
 import { SalesforceApiLoader } from '../salesforce/SalesforceApiLoader';
 import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
@@ -22,6 +23,7 @@ import {
 } from '../salesforce/SalesforceOperation';
 import { SheetRegistry } from './SheetRegistry';
 import { TransformRow, TransformScriptRunner } from './TransformScriptRunner';
+import { MillerRunner } from './MillerRunner';
 
 export interface PipelineResult {
   hadContinuedErrors: boolean;
@@ -45,6 +47,8 @@ function actionInputSheets(action: Action): string[] {
   switch (action.type) {
     case 'transform':
       return [(action as TransformAction).inputSheet];
+    case 'miller':
+      return (action as MillerAction).inputSheets;
     case 'merge':
       return [(action as MergeAction).primarySheet, (action as MergeAction).secondarySheet];
     case 'insert':
@@ -67,6 +71,8 @@ function actionOutputSheet(action: Action): string | undefined {
       return (action as GetAction).outputSheet;
     case 'transform':
       return (action as TransformAction).outputSheet;
+    case 'miller':
+      return (action as MillerAction).outputSheet;
     case 'merge':
       return (action as MergeAction).outputSheet;
     case 'insert':
@@ -119,6 +125,7 @@ export class ActionProcessor {
     const externalSheets = sheetsInput instanceof SheetRegistry ? undefined : sheetsInput;
     const onSheetProduced = executionRange.onSheetProduced;
     const transformRunner = new TransformScriptRunner();
+    const millerRunner = new MillerRunner();
     try {
       let range: ResolvedActionRange;
       try {
@@ -151,6 +158,13 @@ export class ActionProcessor {
           console.log(`      Precheck: loading ${checks.length} check script(s).`);
         }
         transformRunner.preflightChecks(checks);
+        const millers = selectedActions.filter(
+          (action): action is MillerAction => action.type === 'miller'
+        ) as MillerAction[];
+        if (millers.length > 0) {
+          console.log(`      Precheck: verifying Miller (mlr) is available for ${millers.length} action(s).`);
+        }
+        await millerRunner.preflight(millers);
       } catch (error: any) {
         throw new ConfigurationPreflightError(error.message);
       }
@@ -179,7 +193,7 @@ export class ActionProcessor {
 
         let hadRowErrors: boolean;
         try {
-          hadRowErrors = await this.executeAction(execConf, action, registry, transformRunner);
+          hadRowErrors = await this.executeAction(execConf, action, registry, transformRunner, millerRunner);
         } catch (error) {
           console.error(
             `      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} `
@@ -288,7 +302,8 @@ export class ActionProcessor {
     execConf: ExecConf,
     action: Action,
     sheets: SheetRegistry,
-    transformRunner: TransformScriptRunner
+    transformRunner: TransformScriptRunner,
+    millerRunner: MillerRunner
   ): Promise<boolean> {
     try {
       switch (action.type) {
@@ -307,6 +322,8 @@ export class ActionProcessor {
           return await this.executeWrite(execConf, action as WriteAction, sheets);
         case 'check':
           return this.executeCheck(action as CheckAction, sheets, transformRunner);
+        case 'miller':
+          return await this.executeMiller(action as MillerAction, sheets, millerRunner);
       }
     } catch (error: any) {
       if (error instanceof PipelineExecutionError) throw error;
@@ -395,6 +412,22 @@ export class ActionProcessor {
       sheets.set(action.errorSheet, TransformScriptRunner.rowsToDataSheet(action.errorSheet, rows));
       return true;
     }
+    return false;
+  }
+
+  private static async executeMiller(
+    action: MillerAction,
+    sheets: SheetRegistry,
+    runner: MillerRunner
+  ): Promise<boolean> {
+    const inputRows = action.inputSheets.reduce((total, name) => total + sheets.require(name).data.length, 0);
+    const result = await runner.run(action, sheets);
+    sheets.set(action.outputSheet, result);
+    console.log(
+      `        Rows: ${inputRows} input across ${action.inputSheets.length} sheet(s), `
+      + `${result.data.length} output.`
+    );
+    // Miller either transforms the whole file or fails; there are no per-row errors.
     return false;
   }
 

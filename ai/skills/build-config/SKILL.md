@@ -1,6 +1,6 @@
 ---
 name: build-config
-description: Author or edit an sf-data pipeline configuration (conf.yaml). Use when asked to create, build, generate, or scaffold a sf-data config / conf.yaml / pipeline, or to add/modify an action (get, insert, update, upsert, delete, transform, merge, check). Produces a valid config accepted by src/schema/ExecConfSchema.ts.
+description: Author or edit an sf-data pipeline configuration (conf.yaml). Use when asked to create, build, generate, or scaffold a sf-data config / conf.yaml / pipeline, or to add/modify an action (get, insert, update, upsert, delete, transform, merge, check, miller). Produces a valid config accepted by src/schema/ExecConfSchema.ts.
 ---
 
 # Build an sf-data `conf.yaml`
@@ -79,7 +79,7 @@ sheets:
 | `errorSheet` | `<name>-errors` | Must differ from this action's own in/out sheets. |
 | `errorRows` | `errors` | `errors` = only failed rows; `all` = every row. |
 
-## The 8 action types and their field rules
+## The 9 action types and their field rules
 
 ```yaml
 # GET — SOQL into a new sheet (no input). Atomically replaces outputSheet.
@@ -136,17 +136,29 @@ sheets:
   type: "check"
   inputSheets: ["employees"]     # one or more sheets passed to the function
   continueOnError: false         # false return -> error sheet + stop unless continueOnError
+
+# MILLER — transform CSV with Miller/mlr. Offline. No --scriptFile. Needs `mlr` on PATH.
+- name: "Sort Employees"
+  type: "miller"
+  inputSheets: ["employees"]     # one or more; passed to mlr in order (multi = join verbs)
+  outputSheet: "employees-sorted"  # required; captures mlr stdout
+  command: "sort -nr Salary"     # required; VERB CHAIN ONLY — no mlr, no --csv, no file paths
 ```
 
 When `fields` is omitted on insert/update/upsert, every input column is used (insert also
 sends `Id` if present). `transform` and `check` require the shared script file — see the
-**build-script** skill.
+**build-script** skill. `miller` needs no script file: the app runs
+`mlr --csv <command> <input file(s)>` and captures stdout as `outputSheet`, so `command`
+holds only the verb chain (quotes and `then`-chains are fine, e.g.
+`filter '$age > 30' then sort -f Name`).
 
 ## After writing
 
 1. Re-check every field rule against the tables above (and the schema if unsure).
 2. If any `transform`/`check` action exists, ensure a matching function exists in the
-   shared script (`--scriptFile`), keyed by the exact action `name`.
+   shared script (`--scriptFile`), keyed by the exact action `name`. If any `miller`
+   action exists, confirm `mlr` is on `PATH` and each `command` has no `mlr`, `--csv`,
+   or file paths.
 3. Validate & run (see [ai/AI_GUIDE.md](../../AI_GUIDE.md) §4):
    ```bash
    node dist/Index.js -c conf.yaml -s scripts.js -i <inputFolder> -o output

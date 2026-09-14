@@ -1,4 +1,4 @@
-export type ActionType = 'get' | 'insert' | 'update' | 'upsert' | 'delete' | 'transform' | 'merge' | 'check';
+export type ActionType = 'get' | 'insert' | 'update' | 'upsert' | 'delete' | 'transform' | 'merge' | 'check' | 'miller';
 export type ErrorRows = 'errors' | 'all';
 
 export interface ActionOptions {

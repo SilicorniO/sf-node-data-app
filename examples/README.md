@@ -27,6 +27,7 @@ node examples/07-multi-sheet-pipeline/generate-xlsx.js
 node dist/Index.js -c examples/07-multi-sheet-pipeline/conf.yaml -s examples/07-multi-sheet-pipeline/scripts.js -e examples/07-multi-sheet-pipeline/enrichment.xlsx -o examples/07-multi-sheet-pipeline/output/
 
 node dist/Index.js -c examples/08-check-rowcount/conf.yaml -s examples/08-check-rowcount/scripts.js -v examples/08-check-rowcount/employees.csv -o examples/08-check-rowcount/output/
+node dist/Index.js -c examples/09-miller-transform/conf.yaml -v examples/09-miller-transform/employees.csv -o examples/09-miller-transform/output/
 ```
 
 - 01: INSERT from CSV
@@ -37,5 +38,7 @@ node dist/Index.js -c examples/08-check-rowcount/conf.yaml -s examples/08-check-
 - 06: standalone JavaScript TRANSFORM
 - 07: header mappings, multi-sheet Excel, branching transforms, UPDATE, and INSERT
 - 08: CHECK actions asserting row count and column values (standalone)
+- 09: MILLER (mlr) CSV transforms, chained (standalone; requires `mlr`)
 
-Examples 01–05 and 07 require Salesforce credentials. Examples 06 and 08 are standalone.
+Examples 01–05 and 07 require Salesforce credentials. Examples 06, 08, and 09 are
+standalone (09 also requires Miller/`mlr` installed).

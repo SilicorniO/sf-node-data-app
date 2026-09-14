@@ -9,6 +9,7 @@ export const ACTION_TYPES = [
   { value: 'transform', label: 'TRANSFORM', description: 'Run a JavaScript module per row' },
   { value: 'merge', label: 'MERGE', description: 'Merge two sheets into one by an id field' },
   { value: 'check', label: 'CHECK', description: 'Assert a condition with a JavaScript function' },
+  { value: 'miller', label: 'MILLER', description: 'Transform CSV with Miller (mlr)' },
 ];
 
 export function createAction(type = 'get', source = {}) {
@@ -41,6 +42,12 @@ export function createAction(type = 'get', source = {}) {
       inputSheets: [...(source.inputSheets || [])],
       scriptContent: source.scriptContent || '',
     });
+  } else if (type === 'miller') {
+    Object.assign(action, {
+      inputSheets: [...(source.inputSheets || [])],
+      outputSheet: source.outputSheet || '',
+      command: source.command || '',
+    });
   } else {
     Object.assign(action, {
       object: source.object || '',
@@ -72,6 +79,7 @@ export function changeActionType(action, type) {
     secondarySheet: action.secondarySheet,
     idField: action.idField,
     inputSheets: action.inputSheets,
+    command: action.command,
   });
 }
 
@@ -105,6 +113,10 @@ export function actionDescription(action) {
     const inputs = (action.inputSheets || []).filter(Boolean);
     return `check ${inputs.length ? inputs.join(', ') : 'condition'}`;
   }
+  if (action.type === 'miller') {
+    const inputs = (action.inputSheets || []).filter(Boolean);
+    return `${inputs.length ? inputs.join(', ') : 'input'} → ${action.outputSheet || 'output'}`;
+  }
   const target = action.object || 'Salesforce object';
   return `${action.inputSheet || 'input sheet'} → ${target}`;
 }
@@ -129,6 +141,8 @@ export function sheetCatalog(state, beforeIndex = state.actions.length) {
     const inputFields = catalog.find(sheet => sheet.name.toLowerCase() === action.inputSheet?.toLowerCase())?.fields || [];
     if (action.type === 'get') add(action.outputSheet, deriveSoqlFields(action.query));
     if (action.type === 'transform') add(action.outputSheet, inputFields);
+    // Miller can reshape columns arbitrarily, so the output field set is unknown.
+    if (action.type === 'miller') add(action.outputSheet, []);
     if (action.type === 'merge') {
       const primaryFields = catalog.find(sheet => sheet.name.toLowerCase() === action.primarySheet?.toLowerCase())?.fields || [];
       const secondaryFields = catalog.find(sheet => sheet.name.toLowerCase() === action.secondarySheet?.toLowerCase())?.fields || [];

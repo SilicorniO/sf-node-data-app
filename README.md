@@ -11,6 +11,7 @@ entry in `actions` performs exactly one operation:
 - `transform`: run a JavaScript function for each CSV row
 - `merge`: join two sheets on a key field, locally (no Salesforce)
 - `check`: run a JavaScript assertion over one or more sheets (no Salesforce)
+- `miller`: transform CSV sheets with [Miller](https://miller.readthedocs.io) (`mlr`), locally (no Salesforce)
 
 Actions run sequentially in YAML order. Every output is immediately available as
 an input to later actions.
@@ -494,6 +495,36 @@ rows and each row is an **array of string cells**; access a column positionally 
 Returning `false` writes a single-row error sheet (`<name>-errors`) and stops the
 pipeline, unless the action sets `continueOnError: true`, in which case later actions
 still run.
+
+### MILLER
+
+```yaml
+- type: miller
+  name: Sort Employees By Salary
+  inputSheets: [employees]
+  outputSheet: employees-sorted
+  command: "sort -nr Salary"
+```
+
+MILLER transforms CSV sheets with [Miller](https://miller.readthedocs.io) (`mlr`),
+entirely locally — no Salesforce credentials. `mlr` must be installed and on `PATH`;
+its absence is a configuration preflight failure.
+
+`command` is the Miller **verb chain only**. The app runs
+`mlr --csv <command> <input file(s)>` and captures the CSV Miller writes to stdout as
+`outputSheet`, so you must **not** include `mlr`, `--csv`, or file paths — those are
+supplied for you. The command is tokenized in-process (respecting single/double quotes)
+and passed to Miller as an argv array; it is never run through a shell. Example with a
+quoted DSL expression and a chained verb:
+
+```yaml
+  command: "filter '$Department == \"Engineering\"' then cut -f FirstName,LastName,Salary"
+```
+
+Each input sheet is materialized to a temporary CSV and passed to Miller in the order
+listed, so multi-sheet (join) verbs work. Miller either transforms the whole file or
+fails; a non-zero exit surfaces Miller's stderr and writes the action's fatal error
+sheet. Because it is offline, MILLER never triggers Salesforce authentication.
 
 ## Output and failures
 
