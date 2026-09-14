@@ -382,6 +382,11 @@ async function handleRun(
   const { command, baseArgs } = resolveCliInvocation();
   const child = spawn(command, [...baseArgs, ...args], { cwd, env });
 
+  // Echo the run to the daemon's own terminal so it is observable there too, not only
+  // in the browser. A separator marks the start of each run so successive runs are
+  // distinguishable in a long-lived daemon's terminal.
+  console.log(`\n--- Pipeline run: ${[command, ...baseArgs, ...args].join(' ')} (cwd: ${cwd}) ---`);
+
   const outputs: Array<{ name: string; rows: number }> = [];
   let carry = '';
   const onChunk = (chunk: Buffer) => {
@@ -395,6 +400,10 @@ async function handleRun(
   };
   child.stdout.on('data', onChunk);
   child.stderr.on('data', onChunk);
+  // Mirror the child's raw output to the daemon terminal, preserving its formatting and
+  // showing partial lines promptly. This is purely additive to the browser stream above.
+  child.stdout.on('data', chunk => process.stdout.write(chunk));
+  child.stderr.on('data', chunk => process.stderr.write(chunk));
 
   // Resolve only when the child exits, so the caller's single-run guard stays held
   // for the whole run rather than releasing as soon as the listeners are attached.
