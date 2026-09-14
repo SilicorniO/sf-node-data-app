@@ -41,11 +41,11 @@ export interface RunRequest {
   toTask?: string | number;
 }
 
-/** Resolves the built generator HTML path, preferring the repo's dist-web output. */
+/** Resolves the built generator HTML path, preferring the repo's dist/web output. */
 function resolveGeneratorHtml(): string | null {
   const candidates = [
-    path.resolve(__dirname, '../../dist-web/execconf_generator.html'),
-    path.resolve(process.cwd(), 'dist-web/execconf_generator.html'),
+    path.resolve(__dirname, '../web/execconf_generator.html'),        // packaged binary + built dist
+    path.resolve(process.cwd(), 'dist/web/execconf_generator.html'),  // running from repo root
   ];
   return candidates.find(candidate => fs.existsSync(candidate)) ?? null;
 }

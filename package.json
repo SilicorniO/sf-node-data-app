@@ -13,7 +13,7 @@
     "build:cli": "npx tsc && node scripts/copy-ai.mjs",
     "build:web": "node web/build.mjs",
     "build:executables": "npm run build && pkg .",
-    "dev:web": "npm run build:web && npx serve dist-web -l 3001 --no-port-switching",
+    "dev:web": "npm run build:web && npx serve dist/web -l 3001 --no-port-switching",
     "ui": "npm run build && node dist/Index.js --ui"
   },
   "keywords": [],
@@ -56,7 +56,8 @@
       "node_modules/better-sqlite3/prebuilds/**/*.node",
       "config/**/*",
       "data/**/*",
-      "dist/ai/**/*"
+      "dist/ai/**/*",
+      "dist/web/**/*"
     ],
     "targets": [
       "node18-win-x64",

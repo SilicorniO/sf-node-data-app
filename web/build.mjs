@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 
 const webDirectory = dirname(fileURLToPath(import.meta.url));
 const rootDirectory = resolve(webDirectory, '..');
-const outputDirectory = resolve(rootDirectory, 'dist-web');
+const outputDirectory = resolve(rootDirectory, 'dist', 'web');
 const temporaryDirectory = resolve(outputDirectory, '.tmp');
 const scriptPath = resolve(temporaryDirectory, 'generator.js');
 
@@ -41,4 +41,4 @@ writeFileSync(outputPath, html, 'utf8');
 rmSync(temporaryDirectory, { recursive: true, force: true });
 
 const bytes = Buffer.byteLength(html);
-console.log(`Built dist-web/execconf_generator.html (${(bytes / 1024).toFixed(1)} KB)`);
+console.log(`Built dist/web/execconf_generator.html (${(bytes / 1024).toFixed(1)} KB)`);

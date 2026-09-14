@@ -30,7 +30,7 @@ Build the standalone configuration generator:
 npm run build:web
 ```
 
-Open `dist-web/execconf_generator.html` directly in a browser. It is one offline
+Open `dist/web/execconf_generator.html` directly in a browser. It is one offline
 HTML file with no CDN or sibling assets. The generator provides:
 
 - typed forms for GET, INSERT, UPDATE, UPSERT, DELETE, and TRANSFORM
