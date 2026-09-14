@@ -10,8 +10,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { listOrgs, resolveOrgToken, SfTokenError } from './SfOrgs';
-import { CsvReader } from '../reader/CsvReader';
 import { ExcelReader } from '../reader/ExcelReader';
+import { readCsvHeaders } from '../io/CsvStream';
 
 const DEFAULT_PORT = 3111;
 const CONF_FILE = 'conf.yaml';
@@ -223,11 +223,13 @@ export function scanInputSheets(cwd: string): DiscoveredInputSheet[] {
     const suffix = path.extname(entry.name).toLowerCase();
     try {
       if (suffix === CSV_FILE_SUFFIX) {
-        const dataSheet = CsvReader.readCsvFileSync(filePath);
+        // Read only the header row so a huge input CSV isn't fully loaded just to
+        // list its columns.
+        const fields = readCsvHeaders(filePath);
         sheets.push({
-          name: dataSheet.name,
+          name: path.basename(entry.name, path.extname(entry.name)),
           source: { kind: 'csv', fileName: entry.name },
-          fields: [...dataSheet.fieldNames],
+          fields,
         });
       } else if (EXCEL_FILE_SUFFIXES.includes(suffix)) {
         for (const worksheet of ExcelReader.listSheetNames(filePath)) {

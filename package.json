@@ -21,6 +21,7 @@
   "license": "ISC",
   "devDependencies": {
     "@types/axios": "^0.9.36",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/js-yaml": "^4.0.9",
     "@types/jsforce": "^1.11.5",
     "@types/node": "^22.15.16",
@@ -35,6 +36,7 @@
     "@codemirror/lang-javascript": "^6.2.5",
     "@dagrejs/dagre": "^3.1.1",
     "axios": "^1.9.0",
+    "better-sqlite3": "^13.0.3",
     "codemirror": "^6.0.2",
     "commander": "^13.1.0",
     "dotenv": "^16.5.0",
@@ -51,6 +53,7 @@
     ],
     "assets": [
       "node_modules/axios/**/*",
+      "node_modules/better-sqlite3/prebuilds/**/*.node",
       "config/**/*",
       "data/**/*"
     ],

@@ -193,6 +193,10 @@ async function main(): Promise<void> {
     const fieldMappings = new Map(
       configuration.sheets.map(sheetConf => [sheetConf.name.toLocaleLowerCase(), sheetConf])
     );
+    const hasFieldMappings = (sheetName: string): boolean => {
+      const sheetConf = fieldMappings.get(sheetName.toLocaleLowerCase());
+      return !!sheetConf && sheetConf.fields.length > 0;
+    };
     const applyMappings = (sheet: DataSheet): DataSheet => {
       const sheetConf = fieldMappings.get(sheet.name.toLocaleLowerCase());
       if (sheetConf && sheetConf.fields.length > 0) {
@@ -223,6 +227,14 @@ async function main(): Promise<void> {
           async () => applyMappings(await CsvReader.readCsvFile(csvFile)),
           () => applyMappings(CsvReader.readCsvFileSync(csvFile))
         );
+        // Record the backing CSV so merge/lookup can index it out-of-core in SQLite
+        // (files larger than RAM never have to be fully materialized to be probed).
+        // Only when the sheet has no field mappings: the SQLite index keys on the raw
+        // CSV headers, so a mapped sheet (whose columns are renamed to API names as it
+        // loads) must fall back to the in-memory, post-mapping index to stay correct.
+        if (!hasFieldMappings(sheetName)) {
+          sheets.registerCsvSource(sheetName, csvFile);
+        }
         console.log(`        + "${sheetName}" (${csvFile})`);
       }
     }
@@ -246,6 +258,9 @@ async function main(): Promise<void> {
           async () => applyMappings(await CsvReader.readCsvFile(csvFile)),
           () => applyMappings(CsvReader.readCsvFileSync(csvFile))
         );
+        if (!hasFieldMappings(sheetName)) {
+          sheets.registerCsvSource(sheetName, csvFile);
+        }
         registeredFromOutput.push(sheetName);
       }
       if (registeredFromOutput.length) {
@@ -339,6 +354,9 @@ async function main(): Promise<void> {
     console.error(`      FAILED while writing outputs: ${error.message}`);
     runtimeFailure = runtimeFailure ?? error;
   }
+
+  // Release the temp SQLite workspace and any keyed indexes built for merge/lookup.
+  sheets.disposeIndexes();
 
   if (runtimeFailure) {
     console.error('\nPipeline finished with errors.');

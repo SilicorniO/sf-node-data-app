@@ -6,6 +6,7 @@ import { AppConfiguration } from '../../src/model/AppConfiguration';
 import { CheckAction } from '../../src/model/CheckAction';
 import { ExecConf } from '../../src/model/ExecConf';
 import { InsertAction } from '../../src/model/InsertAction';
+import { MergeAction } from '../../src/model/MergeAction';
 import { TransformAction } from '../../src/model/TransformAction';
 import { UpdateAction } from '../../src/model/UpdateAction';
 import { UpsertAction } from '../../src/model/UpsertAction';
@@ -415,5 +416,100 @@ describe('ActionProcessor check execution', () => {
 
     expect(result.hadContinuedErrors).toBe(false);
     expect(registry.get('Same Row Count-errors')).toBeUndefined();
+  });
+});
+
+describe('ActionProcessor merge execution', () => {
+  let tempDir = '';
+
+  beforeAll(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfdata-merge-'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function mergeConfig(): ExecConf {
+    return new ExecConf(
+      new AppConfiguration('api', null, null, '58.0'),
+      [new MergeAction('Combine', 'primary', 'secondary', 'merged', 'Id')],
+      []
+    );
+  }
+
+  // Primary keeps its own non-empty cells; the secondary fills only blanks and adds
+  // its extra column. Unmatched secondary ids are appended; empty-id rows pass through.
+  const primaryData = [
+    ['1', 'Acme', ''],
+    ['2', '', 'east'],
+    ['', 'NoId', 'west'],
+  ];
+  const secondaryData = [
+    ['1', 'IGNORED', 'gold'], // Name is non-empty in primary → primary wins; Tier is new.
+    ['2', 'Globex', 'silver'], // fills primary's empty Name; Tier added.
+    ['3', 'Initech', 'bronze'], // unmatched → appended.
+    ['', 'Orphan', 'none'], // empty id → passthrough.
+  ];
+
+  const expectedFieldNames = ['Id', 'Name', 'Region', 'Tier'];
+  const expectedData = [
+    ['1', 'Acme', '', 'gold'],
+    ['2', 'Globex', 'east', 'silver'],
+    ['', 'NoId', 'west', ''],
+    ['3', 'Initech', '', 'bronze'],
+    ['', 'Orphan', '', 'none'],
+  ];
+
+  it('merges two in-memory sheets preserving column order and primary-wins semantics', async () => {
+    const registry = new SheetRegistry({
+      primary: { name: 'primary', fieldNames: ['Id', 'Name', 'Region'], data: primaryData },
+      secondary: { name: 'secondary', fieldNames: ['Id', 'Name', 'Tier'], data: secondaryData },
+    });
+
+    await ActionProcessor.processActions(mergeConfig(), registry);
+
+    const merged = registry.get('merged');
+    expect(merged?.fieldNames).toEqual(expectedFieldNames);
+    expect(merged?.data).toEqual(expectedData);
+    registry.disposeIndexes();
+  });
+
+  it('produces identical output when both sides are indexed out-of-core via SQLite', async () => {
+    const primaryCsv = path.join(tempDir, 'primary.csv');
+    const secondaryCsv = path.join(tempDir, 'secondary.csv');
+    fs.writeFileSync(primaryCsv, 'Id,Name,Region\n' + primaryData.map(r => r.join(',')).join('\n') + '\n');
+    fs.writeFileSync(secondaryCsv, 'Id,Name,Tier\n' + secondaryData.map(r => r.join(',')).join('\n') + '\n');
+
+    const registry = new SheetRegistry();
+    registry.registerLoader('primary', async () => ({
+      name: 'primary', fieldNames: ['Id', 'Name', 'Region'], data: primaryData,
+    }));
+    registry.registerLoader('secondary', async () => ({
+      name: 'secondary', fieldNames: ['Id', 'Name', 'Tier'], data: secondaryData,
+    }));
+    // Registering CSV sources routes the merge through the SQLite-backed index.
+    registry.registerCsvSource('primary', primaryCsv);
+    registry.registerCsvSource('secondary', secondaryCsv);
+
+    const merged: { [name: string]: import('../../src/model/DataSheet').DataSheet } = {};
+    await ActionProcessor.processActions(mergeConfig(), registry, {
+      onSheetProduced: (name, sheet) => { merged[name] = sheet; },
+    });
+
+    expect(merged.merged.fieldNames).toEqual(expectedFieldNames);
+    expect(merged.merged.data).toEqual(expectedData);
+    registry.disposeIndexes();
+  });
+
+  it('detects a duplicate id on the secondary side', async () => {
+    const registry = new SheetRegistry({
+      primary: { name: 'primary', fieldNames: ['Id', 'Name'], data: [['1', 'Acme']] },
+      secondary: { name: 'secondary', fieldNames: ['Id', 'Tier'], data: [['1', 'gold'], ['1', 'silver']] },
+    });
+
+    await expect(ActionProcessor.processActions(mergeConfig(), registry))
+      .rejects.toBeInstanceOf(PipelineExecutionError);
+    registry.disposeIndexes();
   });
 });

@@ -158,14 +158,15 @@ export class TransformScriptRunner {
 
   private createContext(sheets: SheetRegistry): TransformContext {
     const lookupAll = (sheetName: string, matchField: string, value: string): TransformRow[] => {
-      const sheet = sheets.require(sheetName);
-      const fieldIndex = sheet.fieldNames.indexOf(matchField);
-      if (fieldIndex < 0) {
-        throw new Error(`Field "${matchField}" was not found in sheet "${sheet.name}".`);
+      // Keyed lookup served by the sheet's index: SQLite-backed (out-of-core) when
+      // the sheet is a CSV pre-indexed for this action, else an in-memory index.
+      // Synchronous either way, preserving the user-script lookup contract.
+      const index = sheets.index(sheetName);
+      const fieldNames = index.fieldNames;
+      if (fieldNames.indexOf(matchField) < 0) {
+        throw new Error(`Field "${matchField}" was not found in sheet "${sheetName}".`);
       }
-      return sheet.data
-        .filter(row => row[fieldIndex] === value)
-        .map(row => this.toRow(sheet.fieldNames, row));
+      return index.lookupAll(matchField, value).map(row => this.toRow(fieldNames, row));
     };
     return {
       lookup: (sheetName, matchField, value) => lookupAll(sheetName, matchField, value)[0],

@@ -77,3 +77,6 @@ yarn-cache
 .nuxt
 .next
 /生成的
+
+#Salesforce
+.sf

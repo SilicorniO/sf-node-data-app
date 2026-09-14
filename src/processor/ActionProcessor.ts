@@ -165,9 +165,14 @@ export class ActionProcessor {
         const startedAt = Date.now();
         console.log(`      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} "${action.name}" — started`);
 
-        // Load only the input sheets this action needs, on demand.
+        // Load only the input sheets this action needs, on demand. A merge probes
+        // both sides by key, so index CSV-backed sides out-of-core (SQLite) instead
+        // of materializing them — this is what lets both merge sides exceed RAM.
+        const indexInsteadOfLoad = action.type === 'merge';
         for (const inputSheet of actionInputSheets(action)) {
-          if (registry.isKnown(inputSheet)) {
+          if (indexInsteadOfLoad && registry.canIndexOutOfCore(inputSheet)) {
+            await registry.prepareIndex(inputSheet);
+          } else if (registry.isKnown(inputSheet)) {
             await registry.load(inputSheet);
           }
         }
@@ -255,7 +260,27 @@ export class ActionProcessor {
       if (!sheets.isReloadable(name) && index < lastTransformIndex) {
         continue;
       }
+      sheets.releaseIndex(name);
       sheets.release(name);
+    }
+
+    // Release keyed indexes for out-of-core (SQLite-backed) sheets that are not
+    // resident in memory once their static uses are done, so a run with many merges
+    // does not accumulate every side's SQLite table for the whole run. Reloadable
+    // (CSV-backed) indexes can always be rebuilt if a later dynamic lookup needs them.
+    for (const name of sheets.indexedNames()) {
+      if (sheets.has(name)) {
+        continue; // Handled with its in-memory sheet above.
+      }
+      const lastUse = lastInputUse.get(name.toLocaleLowerCase());
+      const staticallyDone = lastUse === undefined || lastUse <= index;
+      if (!staticallyDone) {
+        continue;
+      }
+      if (!sheets.isReloadable(name) && index < lastTransformIndex) {
+        continue;
+      }
+      sheets.releaseIndex(name);
     }
   }
 
@@ -273,7 +298,7 @@ export class ActionProcessor {
         case 'transform':
           return this.executeTransform(action as TransformAction, sheets, transformRunner);
         case 'merge':
-          this.executeMerge(action as MergeAction, sheets);
+          await this.executeMerge(action as MergeAction, sheets);
           return false;
         case 'insert':
         case 'update':
@@ -390,17 +415,30 @@ export class ActionProcessor {
     return true;
   }
 
-  private static executeMerge(action: MergeAction, sheets: SheetRegistry): void {
-    const primary = sheets.require(action.primarySheet);
-    const secondary = sheets.require(action.secondarySheet);
+  /**
+   * Merges two sheets on an id field. Both sides are indexed out-of-core (SQLite)
+   * so files larger than RAM can be joined without OOM. The primary side is
+   * streamed row-by-row (bounded memory); the secondary is probed by id. Output
+   * semantics are identical to the previous in-memory merge:
+   *   - all primary rows first, in order (matched rows filled from secondary,
+   *     primary winning any non-empty cell), empty-id primary rows pass through;
+   *   - then, in secondary order, empty-id secondary rows and secondary rows whose
+   *     id is unmatched in the primary, appended as new rows;
+   *   - duplicate non-empty ids within either sheet are a fatal error.
+   */
+  private static async executeMerge(action: MergeAction, sheets: SheetRegistry): Promise<void> {
+    await sheets.prepareIndex(action.primarySheet);
+    await sheets.prepareIndex(action.secondarySheet);
+    const primary = sheets.index(action.primarySheet);
+    const secondary = sheets.index(action.secondarySheet);
 
     const primaryIdIndex = primary.fieldNames.indexOf(action.idField);
     if (primaryIdIndex < 0) {
-      throw new Error(`Sheet "${primary.name}" is missing required field: ${action.idField}.`);
+      throw new Error(`Sheet "${action.primarySheet}" is missing required field: ${action.idField}.`);
     }
     const secondaryIdIndex = secondary.fieldNames.indexOf(action.idField);
     if (secondaryIdIndex < 0) {
-      throw new Error(`Sheet "${secondary.name}" is missing required field: ${action.idField}.`);
+      throw new Error(`Sheet "${action.secondarySheet}" is missing required field: ${action.idField}.`);
     }
 
     // Output columns: all primary columns (in order), then secondary columns not already present.
@@ -420,50 +458,51 @@ export class ActionProcessor {
     const blankRow = (): string[] => fieldNames.map(() => '');
     const data: string[][] = [];
 
-    // Primary rows: matched (non-empty id) rows are indexed for merging; empty-id rows pass through.
-    const rowById = new Map<string, string[]>();
-    primary.data.forEach(values => {
+    // Pass A — stream primary rows in order. Non-empty ids are filled from the first
+    // matching secondary row (primary wins non-empty cells). Duplicate primary ids
+    // are detected by probing the primary index for more than one match.
+    for (const values of primary.allRows()) {
       const id = values[primaryIdIndex] ?? '';
       const row = blankRow();
       primary.fieldNames.forEach((_field, column) => { row[column] = values[column] ?? ''; });
       if (id === '') {
         data.push(row);
-        return;
+        continue;
       }
-      if (rowById.has(id)) {
-        throw new Error(`Sheet "${primary.name}" has a duplicate ${action.idField} value: "${id}".`);
+      if (primary.lookupAll(action.idField, id).length > 1) {
+        throw new Error(`Sheet "${action.primarySheet}" has a duplicate ${action.idField} value: "${id}".`);
       }
-      rowById.set(id, row);
+      const match = secondary.lookup(action.idField, id);
+      if (match) {
+        secondary.fieldNames.forEach((_field, column) => {
+          const output = secondaryToOutput[column];
+          if (row[output] === '') row[output] = match[column] ?? '';
+        });
+      }
       data.push(row);
-    });
+    }
 
-    // Secondary rows: merge into the matching primary row (primary wins non-empty cells);
-    // unmatched non-empty ids append a new row; empty-id rows pass through.
-    const seenSecondaryIds = new Set<string>();
-    secondary.data.forEach(values => {
+    // Pass B — stream secondary rows in order. Empty-id rows pass through; non-empty
+    // ids not present in the primary are appended; matched ids were already merged in
+    // pass A. Duplicate secondary ids are detected by probing the secondary index.
+    for (const values of secondary.allRows()) {
       const id = values[secondaryIdIndex] ?? '';
       if (id === '') {
         const row = blankRow();
         secondary.fieldNames.forEach((_field, column) => { row[secondaryToOutput[column]] = values[column] ?? ''; });
         data.push(row);
-        return;
+        continue;
       }
-      if (seenSecondaryIds.has(id)) {
-        throw new Error(`Sheet "${secondary.name}" has a duplicate ${action.idField} value: "${id}".`);
+      if (secondary.lookupAll(action.idField, id).length > 1) {
+        throw new Error(`Sheet "${action.secondarySheet}" has a duplicate ${action.idField} value: "${id}".`);
       }
-      seenSecondaryIds.add(id);
-      const existing = rowById.get(id);
-      if (existing) {
-        secondary.fieldNames.forEach((_field, column) => {
-          const output = secondaryToOutput[column];
-          if (existing[output] === '') existing[output] = values[column] ?? '';
-        });
-        return;
+      if (primary.lookup(action.idField, id)) {
+        continue; // Already merged into its primary row in pass A.
       }
       const row = blankRow();
       secondary.fieldNames.forEach((_field, column) => { row[secondaryToOutput[column]] = values[column] ?? ''; });
       data.push(row);
-    });
+    }
 
     sheets.set(action.outputSheet, { name: action.outputSheet, fieldNames, data });
     console.log(`        Output "${action.outputSheet}": ${data.length} row(s).`);
