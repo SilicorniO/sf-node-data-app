@@ -4,7 +4,7 @@ import { ACTION_TYPES, actionDescription, createAction, sheetCatalog } from '../
 import { notify, replaceState, resetState, restoreDraft, state, subscribe, uid } from '../state.js';
 import { analyzeSharedScript, buildSharedScript, generateYaml, parseSharedScript, parseYaml } from '../yaml.js';
 import { esc, toast } from '../utils.js';
-import { checkDaemon, daemonPossible, fetchAuth, fetchConfig, fetchInputs, loadSession, saveSession, saveConfig, runPipeline } from '../execute.js';
+import { checkDaemon, daemonPossible, fetchAuth, fetchConfig, fetchInputs, loadSession, saveSession, saveConfig, runPipeline, stopPipeline } from '../execute.js';
 import './sf-action-modal.js';
 import './sf-diagram-panel.js';
 
@@ -28,6 +28,7 @@ class SfGeneratorApp extends HTMLElement {
       source: 'sf',
       org: '',
       running: false,
+      stopping: false,
       logLines: [],
       result: null,
       error: '',
@@ -411,6 +412,7 @@ class SfGeneratorApp extends HTMLElement {
           <button class="button primary" data-run-start ${!valid || run.running ? 'disabled' : ''}>
             ${run.running ? 'Running…' : '▶ Run pipeline'}
           </button>
+          ${run.running ? `<button class="button" data-run-stop ${run.stopping ? 'disabled' : ''}>${run.stopping ? 'Stopping…' : '■ Stop'}</button>` : ''}
           ${valid ? '' : '<span class="field-error">Fix configuration issues before running.</span>'}
         </div>
       </div>
@@ -427,8 +429,8 @@ class SfGeneratorApp extends HTMLElement {
         </div>` : ''}
 
       ${run.result ? `
-        <div class="card run-result ${run.result.status === 'success' ? 'ok' : 'bad'}">
-          <h3>${run.result.status === 'success' ? '✓ Pipeline finished successfully' : `✗ Pipeline failed (exit ${run.result.exitCode})`}</h3>
+        <div class="card run-result ${run.result.status === 'success' ? 'ok' : run.result.status === 'stopped' ? 'warn' : 'bad'}">
+          <h3>${run.result.status === 'success' ? '✓ Pipeline finished successfully' : run.result.status === 'stopped' ? '■ Pipeline stopped' : `✗ Pipeline failed (exit ${run.result.exitCode})`}</h3>
           ${run.result.outputs?.length ? `
             <table class="run-output-table">
               <thead><tr><th>Output file</th><th>Rows</th></tr></thead>
@@ -588,6 +590,24 @@ class SfGeneratorApp extends HTMLElement {
     const to = this.querySelector('[data-run-to]');
     to?.addEventListener('change', () => { this.run.toTask = to.value || undefined; });
     this.querySelector('[data-run-start]')?.addEventListener('click', () => this.startRun());
+    this.querySelector('[data-run-stop]')?.addEventListener('click', () => this.stopRun());
+  }
+
+  async stopRun() {
+    if (!this.run.running || this.run.stopping) return;
+    this.run.stopping = true;
+    this.render();
+    try {
+      await stopPipeline();
+    } catch (error) {
+      toast(error.message, 'warning');
+      // The run is still going, so re-enable the Stop button; a successful stop leaves
+      // the button disabled until the in-flight /run stream settles and clears state.
+      this.run.stopping = false;
+      this.render();
+    }
+    // On success, leave run.stopping true: startRun's finally clears both flags when the
+    // stream ends.
   }
 
   async startRun() {
@@ -623,6 +643,7 @@ class SfGeneratorApp extends HTMLElement {
     }
 
     this.run.running = true;
+    this.run.stopping = false;
     this.run.logLines = [];
     this.run.result = null;
     this.run.error = '';
@@ -658,6 +679,7 @@ class SfGeneratorApp extends HTMLElement {
       }
     } finally {
       this.run.running = false;
+      this.run.stopping = false;
       this.render();
     }
   }

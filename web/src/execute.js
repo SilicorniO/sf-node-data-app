@@ -137,6 +137,21 @@ export async function runPipeline(payload, handlers = {}) {
   return result;
 }
 
+/** Requests the daemon terminate the in-progress run. The /run stream ends on its own. */
+export async function stopPipeline() {
+  const response = await fetch('/stop', { method: 'POST' });
+  if (!response.ok) {
+    let message = `Stop failed (${response.status})`;
+    try {
+      message = (await response.json()).error || message;
+    } catch {
+      /* keep default message */
+    }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
 function handleLine(line, handlers) {
   if (line.startsWith(RESULT_MARKER)) {
     try {

@@ -54,6 +54,22 @@ function postRun(body: unknown): Promise<{ status: number; text: string }> {
   });
 }
 
+/** POSTs an empty JSON body to a route and returns the status and body text. */
+function postJson(routePath: string): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      { host: 'localhost', port, path: routePath, method: 'POST' },
+      response => {
+        let text = '';
+        response.on('data', chunk => { text += chunk; });
+        response.on('end', () => resolve({ status: response.statusCode ?? 0, text }));
+      }
+    );
+    request.on('error', reject);
+    request.end();
+  });
+}
+
 suite('UI daemon run endpoint', () => {
   it('runs a transform-only pipeline and streams the result', async () => {
     const yaml = fs.readFileSync(path.join(EXAMPLE, 'conf.yaml'), 'utf8');
@@ -104,6 +120,39 @@ suite('UI daemon run endpoint', () => {
 
     const firstResult = await first;
     expect(firstResult.status).toBe(200);
+  });
+
+  it('stops an in-progress run (POST /stop) and reports a stopped result', async () => {
+    // A 5s pre-action delay keeps the run in flight long enough to stop it.
+    const yaml = [
+      'appConfiguration:',
+      '  processingType: "bulk"',
+      '  apiVersion: "63.0"',
+      'actions:',
+      '  - name: "T"',
+      '    type: "transform"',
+      '    inputSheet: "employees"',
+      '    outputSheet: "out"',
+      '    waitBeforeSeconds: 5',
+    ].join('\n');
+    const payload = { yaml, script: 'module.exports={T:r=>r};', hasTransform: true, auth: { source: 'env' } };
+
+    const run = postRun(payload);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const stop = await postJson('/stop');
+    expect(stop.status).toBe(200);
+
+    const runResult = await run;
+    expect(runResult.status).toBe(200);
+    const trailer = runResult.text.split('\n').find(line => line.startsWith('__SFDATA_RESULT__'));
+    expect(trailer).toBeDefined();
+    const result = JSON.parse(trailer!.replace('__SFDATA_RESULT__', '').trim());
+    expect(result.status).toBe('stopped');
+  });
+
+  it('rejects /stop when no run is in progress (409)', async () => {
+    const stop = await postJson('/stop');
+    expect(stop.status).toBe(409);
   });
 
   it('serves the daemon status', async () => {

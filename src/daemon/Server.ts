@@ -8,7 +8,7 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import { listOrgs, resolveOrgToken, SfTokenError } from './SfOrgs';
 import { ExcelReader } from '../reader/ExcelReader';
 import { readCsvHeaders } from '../io/CsvStream';
@@ -121,6 +121,9 @@ export function startUiServer(options: StartUiServerOptions = {}): http.Server {
   const port = options.port ?? DEFAULT_PORT;
   const cwd = options.cwd ?? process.cwd();
   let running = false;
+  // The child process of the in-progress run, so POST /stop can terminate it.
+  // Set when a run starts and cleared when it settles; at most one run at a time.
+  let currentChild: ChildProcess | null = null;
 
   const server = http.createServer((request, response) => {
     const url = new URL(request.url || '/', `http://localhost:${port}`);
@@ -156,9 +159,24 @@ export function startUiServer(options: StartUiServerOptions = {}): http.Server {
         return;
       }
       running = true;
-      handleRun(cwd, request, response).finally(() => {
+      handleRun(cwd, request, response, child => { currentChild = child; }).finally(() => {
         running = false;
+        currentChild = null;
       });
+      return;
+    }
+    if (request.method === 'POST' && route === '/stop') {
+      if (!running || !currentChild) {
+        sendJson(response, 409, { error: 'No pipeline run is in progress.' });
+        return;
+      }
+      // Ask the run to stop, then hard-kill if it does not exit in time. The in-flight
+      // /run stream ends on its own when the child closes, reporting a stopped result.
+      const child = currentChild;
+      child.kill('SIGTERM');
+      const killTimer = setTimeout(() => child.kill('SIGKILL'), 5000);
+      child.once('close', () => clearTimeout(killTimer));
+      sendJson(response, 200, { ok: true });
       return;
     }
     response.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -322,7 +340,8 @@ async function handleAuth(cwd: string, response: http.ServerResponse): Promise<v
 async function handleRun(
   cwd: string,
   request: http.IncomingMessage,
-  response: http.ServerResponse
+  response: http.ServerResponse,
+  setChild: (child: ChildProcess | null) => void
 ): Promise<void> {
   let body: RunRequest;
   try {
@@ -381,6 +400,7 @@ async function handleRun(
   const args = buildCliArgs(body);
   const { command, baseArgs } = resolveCliInvocation();
   const child = spawn(command, [...baseArgs, ...args], { cwd, env });
+  setChild(child);
 
   // Echo the run to the daemon's own terminal so it is observable there too, not only
   // in the browser. A separator marks the start of each run so successive runs are
@@ -409,15 +429,17 @@ async function handleRun(
   // for the whole run rather than releasing as soon as the listeners are attached.
   await new Promise<void>(resolve => {
     let settled = false;
-    const settle = (exitCode: number, startupError?: string) => {
+    const settle = (exitCode: number, options?: { startupError?: string; stopped?: boolean }) => {
       if (settled) return;
       settled = true;
-      if (startupError) response.write(`\nFailed to start pipeline: ${startupError}\n`);
-      finishRun(response, carry, outputs, exitCode);
+      if (options?.startupError) response.write(`\nFailed to start pipeline: ${options.startupError}\n`);
+      finishRun(response, carry, outputs, exitCode, options?.stopped ?? false);
       resolve();
     };
-    child.on('error', error => settle(1, error.message));
-    child.on('close', code => settle(code ?? 1));
+    child.on('error', error => settle(1, { startupError: error.message }));
+    // A run terminated via POST /stop closes with a signal (SIGTERM/SIGKILL) and a null
+    // exit code; report it as "stopped" rather than a failure.
+    child.on('close', (code, signal) => settle(code ?? 1, { stopped: signal !== null }));
   });
 }
 
@@ -426,13 +448,14 @@ function finishRun(
   response: http.ServerResponse,
   carry: string,
   outputs: Array<{ name: string; rows: number }>,
-  exitCode: number
+  exitCode: number,
+  stopped: boolean
 ): void {
   if (carry) {
     captureOutput(carry, outputs);
     response.write(carry + '\n');
   }
-  const status = exitCode === 0 ? 'success' : 'failed';
+  const status = stopped ? 'stopped' : exitCode === 0 ? 'success' : 'failed';
   response.write(`${RESULT_MARKER} ${JSON.stringify({ exitCode, status, outputs })}\n`);
   response.end();
 }
