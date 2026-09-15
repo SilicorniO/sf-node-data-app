@@ -167,12 +167,12 @@ class SfActionModal extends HTMLElement {
               </span>`).join('')}
             <input id="new-input-sheet" type="text" list="sheet-suggestions" placeholder="Add a sheet, then Enter">
           </div>
-          <small class="hint">One or more CSVs passed to <code>mlr</code> in order. The first is usually enough; add more for join-style verbs.</small>
+          <small class="hint">One or more CSVs passed to <code>mlr</code> in order. The first is usually enough; add more for join-style verbs, and reference a specific one mid-command with <code>{{sheetName}}</code>.</small>
         </div>
         ${this.field('outputSheet', 'Output sheet', action.outputSheet, { required: true, list: true, placeholder: 'employees-sorted' })}
         ${this.field('command', 'Miller command', action.command, { required: true, textarea: true, wide: true, placeholder: 'sort -nr salary' })}
         <div class="field wide">
-          <small class="hint">Verb chain only — the app runs <code>mlr --csv &lt;command&gt; &lt;input files&gt;</code> and writes the result to the output folder. Do not include <code>mlr</code>, <code>--csv</code>, or file paths. Example: <code>filter '$age &gt; 30' then sort -f name</code>.</small>
+          <small class="hint">Verb chain only — the app runs <code>mlr --csv &lt;command&gt; &lt;input files&gt;</code> and writes the result to the output folder. Do not include <code>mlr</code>, <code>--csv</code>, or raw file paths. To place a specific input mid-command (e.g. a join's left file) use a <code>{{sheetName}}</code> placeholder; inputs you don't reference are appended in order. Examples: <code>filter '$age &gt; 30' then sort -f name</code> · <code>join -j Id -f {{accounts}}</code>.</small>
         </div>
       </div>`;
     }

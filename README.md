@@ -514,7 +514,7 @@ its absence is a configuration preflight failure.
 
 `command` is the Miller **verb chain only**. The app runs
 `mlr --csv <command> <input file(s)>` and captures the CSV Miller writes to stdout as
-`outputSheet`, so you must **not** include `mlr`, `--csv`, or file paths — those are
+`outputSheet`, so you must **not** include `mlr`, `--csv`, or raw file paths — those are
 supplied for you. The command is tokenized in-process (respecting single/double quotes)
 and passed to Miller as an argv array; it is never run through a shell. Example with a
 quoted DSL expression and a chained verb:
@@ -523,10 +523,25 @@ quoted DSL expression and a chained verb:
   command: "filter '$Department == \"Engineering\"' then cut -f FirstName,LastName,Salary"
 ```
 
-Each input sheet is materialized to a temporary CSV and passed to Miller in the order
-listed, so multi-sheet (join) verbs work. Miller either transforms the whole file or
-fails; a non-zero exit surfaces Miller's stderr and writes the action's fatal error
-sheet. Because it is offline, MILLER never triggers Salesforce authentication.
+Each input sheet is materialized to a temporary CSV. Inputs are appended to Miller in the
+order listed, **unless** you reference one mid-command with a `{{sheetName}}` placeholder,
+which the app replaces with that input's CSV path — inputs you don't reference are still
+appended in order. This is how join-style verbs work, where one input must be named by
+Miller's `-f` flag (the left file) and the other is streamed as the trailing input (the
+right file):
+
+```yaml
+- type: miller
+  name: Join Contacts To Accounts
+  inputSheets: [accounts, contacts]   # accounts = left (via -f), contacts = streamed right
+  outputSheet: joined
+  command: "join -j AccountId -f {{accounts}}"
+```
+
+A placeholder must name one of `inputSheets` (matched case-insensitively) or the config
+fails to parse. Miller either transforms the whole file or fails; a non-zero exit surfaces
+Miller's stderr and writes the action's fatal error sheet. Because it is offline, MILLER
+never triggers Salesforce authentication.
 
 ### TABLE
 

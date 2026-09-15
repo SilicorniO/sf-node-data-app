@@ -109,6 +109,20 @@ actions:
     expect(action).toMatchObject({ continueOnError: false, errorSheet: 'Sort Employees-errors' });
   });
 
+  it('parses a miller action with a {{sheetName}} placeholder for a declared input', () => {
+    const configuration = ExecConfReader.parseConf(`
+actions:
+  - type: miller
+    name: Join
+    inputSheets: [depts, people]
+    outputSheet: joined
+    command: "join -j DeptId -f {{depts}}"
+`);
+    const action = configuration.actions[0];
+    expect(action).toBeInstanceOf(MillerAction);
+    expect((action as MillerAction).command).toBe('join -j DeptId -f {{depts}}');
+  });
+
   it('parses a table action with column renames and types', () => {
     const configuration = ExecConfReader.parseConf(`
 actions:
@@ -261,6 +275,7 @@ actions:
     ['miller command starting with mlr', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "mlr cat" }`],
     ['miller command setting csv format', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "--csv cat" }`],
     ['miller error sheet collision', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "cat", errorSheet: b }`],
+    ['miller placeholder naming an unknown sheet', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "join -j Id -f {{missing}}" }`],
     ['table with duplicate source columns', `actions:\n  - { type: table, name: T, inputSheet: A, columns: [{ source: X }, { source: x }] }`],
     ['table with colliding renamed columns', `actions:\n  - { type: table, name: T, inputSheet: A, columns: [{ source: X, name: N }, { source: Y, name: n }] }`],
     ['table with an invalid column type', `actions:\n  - { type: table, name: T, inputSheet: A, columns: [{ source: X, type: DATE }] }`],

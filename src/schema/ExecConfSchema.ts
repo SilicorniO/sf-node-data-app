@@ -122,6 +122,15 @@ const millerActionSchema = z.object({
   if (/(^|\s)--(i|o|io)?csv\b/.test(command) || /(^|\s)--c2\w+\b/.test(command)) {
     context.addIssue({ code: 'custom', path: ['command'], message: 'command must not set the CSV format; the app adds "--csv"' });
   }
+  // `{{sheetName}}` placeholders are substituted with an input's CSV path at run time
+  // (e.g. Miller `join -f {{left}}`), so each must name a declared input sheet.
+  const inputs = new Set(action.inputSheets.map(sheet => sheet.toLocaleLowerCase()));
+  for (const match of command.matchAll(/\{\{\s*([^}]*?)\s*\}\}/g)) {
+    const name = match[1];
+    if (!inputs.has(name.toLocaleLowerCase())) {
+      context.addIssue({ code: 'custom', path: ['command'], message: `command placeholder {{${name}}} must name one of inputSheets` });
+    }
+  }
   // Shell metacharacters (`; & | > <` etc.) are NOT rejected: the command is
   // tokenized in-process and passed to execFile as an argv array with no shell, so
   // they carry no shell meaning. Rejecting them would break legitimate Miller DSL

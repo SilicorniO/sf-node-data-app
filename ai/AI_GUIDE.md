@@ -133,9 +133,10 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
 # MILLER — transform CSV with Miller/mlr (local, no Salesforce; requires `mlr` on PATH)
 - name: "Sort Employees"
   type: "miller"
-  inputSheets: ["employees"]            # one or more; passed to mlr in order (multi = join verbs)
+  inputSheets: ["employees"]            # one or more; appended to mlr in order (multi = join verbs)
   outputSheet: "employees-sorted"       # required; captures mlr's stdout
-  command: "sort -nr Salary"            # required; the verb chain ONLY
+  command: "sort -nr Salary"            # required; verb chain ONLY. Position an input mid-command
+                                        #   with {{sheetName}}, e.g. "join -j Id -f {{accounts}}"
 
 # TABLE — load a sheet into a SQLite table (local, no Salesforce; no output sheet)
 - name: "Index Employees"
@@ -158,10 +159,17 @@ signature — it differs from a transform function.
 
 `miller` needs **no** `--scriptFile`. `command` is the Miller **verb chain only**: the app
 runs `mlr --csv <command> <input file(s)>` and captures stdout as `outputSheet`, so never put
-`mlr`, `--csv`, or file paths in it. The command is tokenized in-process (single/double quotes
+`mlr`, `--csv`, or raw file paths in it. The command is tokenized in-process (single/double quotes
 respected) and passed to `mlr` as an argv array — never through a shell, so DSL expressions like
 `filter '$age > 30'` and chained verbs (`... then cut -f Name`) are safe. `mlr` must be installed
 and on `PATH`, or the run fails at preflight.
+
+To place a specific input mid-command, reference it with a `{{sheetName}}` placeholder (matched
+case-insensitively against `inputSheets`); the app substitutes that input's CSV path. Inputs you
+don't reference are still appended in order. This is required for join-style verbs, where Miller's
+`-f` flag names the left file and the trailing input is the streamed right file — e.g. with
+`inputSheets: [accounts, contacts]`, `command: "join -j Id -f {{accounts}}"` joins on `accounts`
+(left) with `contacts` streamed. A placeholder that doesn't name a declared input is a config error.
 
 `table` and `sql` are the SQLite pair. A `table` action loads its `inputSheet` into a SQLite
 table (named after the sheet, real field names as columns) as a **side effect** — it has no
@@ -406,7 +414,7 @@ node dist/Index.js -c myjob/conf.yaml -s myjob/scripts.js -v myjob/contacts.csv 
 - [ ] Every `inputSheet` is either an input file's sheet or a prior action's `outputSheet`.
 - [ ] `fields` rules honored: insert excludes `Id`; update includes `Id`; upsert includes `externalIdField`.
 - [ ] If any transform or check exists, `--scriptFile` is passed and the shared file exports a function keyed by each transform/check action's `name`.
-- [ ] If any `miller` action exists, `mlr` is installed on `PATH` and each `command` is a verb chain only (no `mlr`, `--csv`, or file paths).
+- [ ] If any `miller` action exists, `mlr` is installed on `PATH` and each `command` is a verb chain only (no `mlr`, `--csv`, or raw file paths); any `{{sheetName}}` placeholder names a declared input.
 - [ ] Every `sql` action's `inputSheets` each have an earlier `table` action; the `query` starts with `SELECT`/`WITH` and quotes identifiers with spaces or reserved words.
 - [ ] Inputs supplied via `-v`/`-e`/`-i`; sheet names don't collide.
 - [ ] SF auth env vars set if any get/insert/update/upsert/delete action runs.

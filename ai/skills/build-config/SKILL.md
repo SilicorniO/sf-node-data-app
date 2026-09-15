@@ -140,9 +140,11 @@ sheets:
 # MILLER — transform CSV with Miller/mlr. Offline. No --scriptFile. Needs `mlr` on PATH.
 - name: "Sort Employees"
   type: "miller"
-  inputSheets: ["employees"]     # one or more; passed to mlr in order (multi = join verbs)
+  inputSheets: ["employees"]     # one or more; appended to mlr in order (multi = join verbs)
   outputSheet: "employees-sorted"  # required; captures mlr stdout
-  command: "sort -nr Salary"     # required; VERB CHAIN ONLY — no mlr, no --csv, no file paths
+  command: "sort -nr Salary"     # required; VERB CHAIN ONLY — no mlr, no --csv, no raw paths.
+                                 #   Position an input mid-command with {{sheetName}}, e.g.
+                                 #   "join -j Id -f {{accounts}}"
 
 # TABLE — load a sheet into a SQLite table for sql/merge/lookup. Offline. No output sheet.
 - name: "Index Employees"
@@ -165,7 +167,11 @@ sends `Id` if present). `transform` and `check` require the shared script file �
 **build-script** skill. `miller` needs no script file: the app runs
 `mlr --csv <command> <input file(s)>` and captures stdout as `outputSheet`, so `command`
 holds only the verb chain (quotes and `then`-chains are fine, e.g.
-`filter '$age > 30' then sort -f Name`). `table` needs no script file and has no output
+`filter '$age > 30' then sort -f Name`). To place a specific input mid-command — e.g. a
+join's left file via Miller's `-f` — reference it with a `{{sheetName}}` placeholder
+(must name a declared input); the app substitutes its CSV path, and inputs you don't
+reference are still appended in order (e.g. `join -j Id -f {{accounts}}` with
+`inputSheets: [accounts, contacts]`). `table` needs no script file and has no output
 sheet — it registers a SQLite table (named after `inputSheet`, real field names as
 columns) that later `sql`/`merge`/`lookup` use; set a numeric `type` so SQL sorts and
 compares numerically. `sql` must be a read-only `SELECT`/`WITH` and can only query sheets
@@ -179,7 +185,7 @@ run for inspection (removed only when **Clean output folder before execution** i
 2. If any `transform`/`check` action exists, ensure a matching function exists in the
    shared script (`--scriptFile`), keyed by the exact action `name`. If any `miller`
    action exists, confirm `mlr` is on `PATH` and each `command` has no `mlr`, `--csv`,
-   or file paths.
+   or raw file paths, and any `{{sheetName}}` placeholder names a declared input.
 3. Validate & run (see [ai/AI_GUIDE.md](../../AI_GUIDE.md) §4):
    ```bash
    node dist/Index.js -c conf.yaml -s scripts.js -i <inputFolder> -o output

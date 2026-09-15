@@ -44,14 +44,28 @@ export class MillerRunner {
   async run(action: MillerAction, sheets: SheetRegistry): Promise<DataSheet> {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfdata-mlr-'));
     try {
-      const inputPaths = action.inputSheets.map((sheetName, index) => {
+      // Materialize each input sheet to a temp CSV, keyed by lowercased sheet name so
+      // `{{sheetName}}` placeholders in the command can be substituted case-insensitively.
+      const pathBySheet = new Map<string, string>();
+      action.inputSheets.forEach((sheetName, index) => {
         const sheet = sheets.require(sheetName);
         const filePath = path.join(workDir, `input-${index}.csv`);
         fs.writeFileSync(filePath, CsvProcessor.generateCSV(sheet.fieldNames, sheet.data), 'utf8');
-        return filePath;
+        pathBySheet.set(sheetName.toLocaleLowerCase(), filePath);
       });
 
-      const args = ['--csv', ...tokenizeCommand(action.command), ...inputPaths];
+      // Substitute `{{sheetName}}` placeholders with the input's CSV path. A referenced
+      // input is positioned by the placeholder (e.g. Miller `join -f {{left}}`), so it is
+      // not also appended; inputs with no placeholder still append at the end in order.
+      const referenced = new Set<string>();
+      const commandTokens = tokenizeCommand(action.command).map(token =>
+        substitutePlaceholders(token, pathBySheet, referenced)
+      );
+      const trailingInputs = action.inputSheets
+        .filter(sheetName => !referenced.has(sheetName.toLocaleLowerCase()))
+        .map(sheetName => pathBySheet.get(sheetName.toLocaleLowerCase()) as string);
+
+      const args = ['--csv', ...commandTokens, ...trailingInputs];
 
       let stdout: string;
       try {
@@ -131,4 +145,31 @@ export function tokenizeCommand(command: string): string[] {
     tokens.push(current);
   }
   return tokens;
+}
+
+/** Matches a `{{sheetName}}` placeholder; captures the trimmed sheet name. */
+const PLACEHOLDER = /\{\{\s*([^}]*?)\s*\}\}/g;
+
+/**
+ * Replaces every `{{sheetName}}` placeholder in a single argv token with the input's
+ * CSV path (case-insensitive name lookup), recording each referenced sheet in
+ * `referenced`. Throws if a placeholder names a sheet that is not a declared input.
+ */
+export function substitutePlaceholders(
+  token: string,
+  pathBySheet: Map<string, string>,
+  referenced: Set<string>
+): string {
+  return token.replace(PLACEHOLDER, (_match, rawName: string) => {
+    const key = rawName.toLocaleLowerCase();
+    const filePath = pathBySheet.get(key);
+    if (filePath === undefined) {
+      throw new Error(
+        `Miller command references unknown input sheet in placeholder {{${rawName}}}; `
+        + 'it must name one of the action\'s inputSheets.'
+      );
+    }
+    referenced.add(key);
+    return filePath;
+  });
 }
