@@ -11,6 +11,8 @@ import { UpsertAction } from '../model/UpsertAction';
 import { WriteAction } from '../model/WriteAction';
 import { CheckAction } from '../model/CheckAction';
 import { MillerAction } from '../model/MillerAction';
+import { TableAction } from '../model/TableAction';
+import { SqlAction } from '../model/SqlAction';
 import { buildCountQuery, decideByCount } from '../salesforce/AutoModeSelector';
 import { SalesforceApiLoader } from '../salesforce/SalesforceApiLoader';
 import { SalesforceAuthenticator } from '../salesforce/SalesforceAuthenticator';
@@ -49,6 +51,8 @@ function actionInputSheets(action: Action): string[] {
       return [(action as TransformAction).inputSheet];
     case 'miller':
       return (action as MillerAction).inputSheets;
+    case 'sql':
+      return (action as SqlAction).inputSheets;
     case 'merge':
       return [(action as MergeAction).primarySheet, (action as MergeAction).secondarySheet];
     case 'insert':
@@ -58,6 +62,8 @@ function actionInputSheets(action: Action): string[] {
       return [(action as WriteAction).inputSheet];
     case 'check':
       return (action as CheckAction).inputSheets;
+    case 'table':
+      return [(action as TableAction).inputSheet];
     case 'get':
     default:
       return [];
@@ -73,6 +79,8 @@ function actionOutputSheet(action: Action): string | undefined {
       return (action as TransformAction).outputSheet;
     case 'miller':
       return (action as MillerAction).outputSheet;
+    case 'sql':
+      return (action as SqlAction).outputSheet;
     case 'merge':
       return (action as MergeAction).outputSheet;
     case 'insert':
@@ -179,14 +187,15 @@ export class ActionProcessor {
         const startedAt = Date.now();
         console.log(`      [${index + 1}/${execConf.actions.length}] ${action.type.toUpperCase()} "${action.name}" — started`);
 
-        // Load only the input sheets this action needs, on demand. A merge probes
-        // both sides by key, so index CSV-backed sides out-of-core (SQLite) instead
-        // of materializing them — this is what lets both merge sides exceed RAM.
-        const indexInsteadOfLoad = action.type === 'merge';
+        // Load only the input sheets this action needs, on demand. A `table` action
+        // streams a CSV-backed input straight into SQLite (bounded memory, larger than
+        // RAM), so it must not be pre-loaded; every other case loads into memory.
+        const streamsInput = action.type === 'table';
         for (const inputSheet of actionInputSheets(action)) {
-          if (indexInsteadOfLoad && registry.canIndexOutOfCore(inputSheet)) {
-            await registry.prepareIndex(inputSheet);
-          } else if (registry.isKnown(inputSheet)) {
+          if (streamsInput && registry.canStreamCsv(inputSheet)) {
+            continue; // createTable() will stream it from disk.
+          }
+          if (registry.isKnown(inputSheet)) {
             await registry.load(inputSheet);
           }
         }
@@ -324,6 +333,10 @@ export class ActionProcessor {
           return this.executeCheck(action as CheckAction, sheets, transformRunner);
         case 'miller':
           return await this.executeMiller(action as MillerAction, sheets, millerRunner);
+        case 'table':
+          return await this.executeTable(action as TableAction, sheets);
+        case 'sql':
+          return this.executeSql(action as SqlAction, sheets);
       }
     } catch (error: any) {
       if (error instanceof PipelineExecutionError) throw error;
@@ -431,6 +444,32 @@ export class ActionProcessor {
     return false;
   }
 
+  private static async executeTable(action: TableAction, sheets: SheetRegistry): Promise<boolean> {
+    await sheets.createTable(action.inputSheet, action.columns);
+    console.log(`        Table "${action.inputSheet}" created for SQL/merge/lookup.`);
+    // Creating a table is a side effect with no output rows and no per-row errors.
+    return false;
+  }
+
+  private static executeSql(action: SqlAction, sheets: SheetRegistry): boolean {
+    const missing = action.inputSheets.filter(name => !sheets.hasTable(name));
+    if (missing.length > 0) {
+      throw new Error(
+        `SQL action "${action.name}" needs a table for ${missing.map(name => `"${name}"`).join(', ')}; `
+        + `add a "table" action for each before querying.`
+      );
+    }
+    const result = sheets.queryTables(action.query);
+    sheets.set(action.outputSheet, {
+      name: action.outputSheet,
+      fieldNames: result.fieldNames,
+      data: result.data,
+    });
+    console.log(`        Output "${action.outputSheet}": ${result.data.length} row(s).`);
+    // A read-only query either succeeds wholesale or throws; there are no per-row errors.
+    return false;
+  }
+
   private static executeCheck(
     action: CheckAction,
     sheets: SheetRegistry,
@@ -460,8 +499,8 @@ export class ActionProcessor {
    *   - duplicate non-empty ids within either sheet are a fatal error.
    */
   private static async executeMerge(action: MergeAction, sheets: SheetRegistry): Promise<void> {
-    await sheets.prepareIndex(action.primarySheet);
-    await sheets.prepareIndex(action.secondarySheet);
+    // Uses a created SQLite table for a side when a `table` action built one (out-of-core,
+    // handles files larger than RAM); otherwise indexes the loaded sheet in memory.
     const primary = sheets.index(action.primarySheet);
     const secondary = sheets.index(action.secondarySheet);
 

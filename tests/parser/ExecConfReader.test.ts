@@ -10,6 +10,8 @@ import { UpdateAction } from '../../src/model/UpdateAction';
 import { UpsertAction } from '../../src/model/UpsertAction';
 import { CheckAction } from '../../src/model/CheckAction';
 import { MillerAction } from '../../src/model/MillerAction';
+import { TableAction } from '../../src/model/TableAction';
+import { SqlAction } from '../../src/model/SqlAction';
 
 const allActionsYaml = `
 actions:
@@ -105,6 +107,49 @@ actions:
     expect((action as MillerAction).outputSheet).toBe('employees-sorted');
     expect((action as MillerAction).command).toBe('sort -nr Salary');
     expect(action).toMatchObject({ continueOnError: false, errorSheet: 'Sort Employees-errors' });
+  });
+
+  it('parses a table action with column renames and types', () => {
+    const configuration = ExecConfReader.parseConf(`
+actions:
+  - type: table
+    name: Index Employees
+    inputSheet: employees
+    columns:
+      - { source: "First Name", name: first_name }
+      - { source: Salary, type: INTEGER }
+`);
+    const action = configuration.actions[0];
+    expect(action).toBeInstanceOf(TableAction);
+    expect((action as TableAction).inputSheet).toBe('employees');
+    expect((action as TableAction).columns).toEqual([
+      { source: 'First Name', name: 'first_name' },
+      { source: 'Salary', type: 'INTEGER' },
+    ]);
+  });
+
+  it('defaults a table action to no column overrides', () => {
+    const configuration = ExecConfReader.parseConf(`
+actions:
+  - { type: table, name: Index, inputSheet: employees }
+`);
+    expect((configuration.actions[0] as TableAction).columns).toEqual([]);
+  });
+
+  it('parses a sql action', () => {
+    const configuration = ExecConfReader.parseConf(`
+actions:
+  - type: sql
+    name: Top Earners
+    inputSheets: [employees]
+    outputSheet: top
+    query: "SELECT Department FROM employees WHERE Salary > 1000"
+`);
+    const action = configuration.actions[0];
+    expect(action).toBeInstanceOf(SqlAction);
+    expect((action as SqlAction).inputSheets).toEqual(['employees']);
+    expect((action as SqlAction).outputSheet).toBe('top');
+    expect((action as SqlAction).query).toContain('SELECT Department');
   });
 
   it('trims values and parses app and sheet mapping defaults', () => {
@@ -216,6 +261,12 @@ actions:
     ['miller command starting with mlr', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "mlr cat" }`],
     ['miller command setting csv format', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "--csv cat" }`],
     ['miller error sheet collision', `actions:\n  - { type: miller, name: M, inputSheets: [A], outputSheet: B, command: "cat", errorSheet: b }`],
+    ['table with duplicate source columns', `actions:\n  - { type: table, name: T, inputSheet: A, columns: [{ source: X }, { source: x }] }`],
+    ['table with colliding renamed columns', `actions:\n  - { type: table, name: T, inputSheet: A, columns: [{ source: X, name: N }, { source: Y, name: n }] }`],
+    ['table with an invalid column type', `actions:\n  - { type: table, name: T, inputSheet: A, columns: [{ source: X, type: DATE }] }`],
+    ['sql with no input sheets', `actions:\n  - { type: sql, name: S, inputSheets: [], outputSheet: B, query: "SELECT 1" }`],
+    ['sql with duplicate input sheets', `actions:\n  - { type: sql, name: S, inputSheets: [A, a], outputSheet: B, query: "SELECT 1" }`],
+    ['sql with a non-read query', `actions:\n  - { type: sql, name: S, inputSheets: [A], outputSheet: B, query: "DROP TABLE A" }`],
   ])('rejects %s', (_description, yaml, scriptFile) => {
     expect(() => ExecConfReader.parseConf(yaml, scriptFile)).toThrow(/Error parsing configuration/);
   });
@@ -226,7 +277,7 @@ actions:
       .map(entry => path.join(examplesDirectory, entry, 'conf.yaml'))
       .filter(file => fs.existsSync(file));
 
-    expect(configurationPaths).toHaveLength(9);
+    expect(configurationPaths).toHaveLength(10);
     for (const configurationPath of configurationPaths) {
       // Examples keep their shared transform script next to conf.yaml; pass it like the CLI would.
       const scriptPath = path.join(path.dirname(configurationPath), 'scripts.js');

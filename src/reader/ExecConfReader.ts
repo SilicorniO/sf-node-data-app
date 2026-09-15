@@ -11,6 +11,8 @@ import { DeleteAction } from '../model/DeleteAction';
 import { MergeAction } from '../model/MergeAction';
 import { CheckAction } from '../model/CheckAction';
 import { MillerAction } from '../model/MillerAction';
+import { TableAction } from '../model/TableAction';
+import { SqlAction } from '../model/SqlAction';
 import { AppConfiguration } from '../model/AppConfiguration';
 import { ExecConf } from '../model/ExecConf';
 import { SheetConf } from '../model/SheetConf';
@@ -124,6 +126,10 @@ export class ExecConfReader {
         return new CheckAction(action.name, action.inputSheets, scriptFilePath, options);
       case 'miller':
         return new MillerAction(action.name, action.inputSheets, action.outputSheet, action.command, options);
+      case 'table':
+        return new TableAction(action.name, action.inputSheet, action.columns, options);
+      case 'sql':
+        return new SqlAction(action.name, action.inputSheets, action.outputSheet, action.query, options);
     }
   }
 }

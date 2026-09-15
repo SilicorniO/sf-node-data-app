@@ -1,6 +1,6 @@
 ---
 name: build-config
-description: Author or edit an sf-data pipeline configuration (conf.yaml). Use when asked to create, build, generate, or scaffold a sf-data config / conf.yaml / pipeline, or to add/modify an action (get, insert, update, upsert, delete, transform, merge, check, miller). Produces a valid config accepted by src/schema/ExecConfSchema.ts.
+description: Author or edit an sf-data pipeline configuration (conf.yaml). Use when asked to create, build, generate, or scaffold a sf-data config / conf.yaml / pipeline, or to add/modify an action (get, insert, update, upsert, delete, transform, merge, check, miller, table, sql). Produces a valid config accepted by src/schema/ExecConfSchema.ts.
 ---
 
 # Build an sf-data `conf.yaml`
@@ -79,7 +79,7 @@ sheets:
 | `errorSheet` | `<name>-errors` | Must differ from this action's own in/out sheets. |
 | `errorRows` | `errors` | `errors` = only failed rows; `all` = every row. |
 
-## The 9 action types and their field rules
+## The 11 action types and their field rules
 
 ```yaml
 # GET — SOQL into a new sheet (no input). Atomically replaces outputSheet.
@@ -143,6 +143,21 @@ sheets:
   inputSheets: ["employees"]     # one or more; passed to mlr in order (multi = join verbs)
   outputSheet: "employees-sorted"  # required; captures mlr stdout
   command: "sort -nr Salary"     # required; VERB CHAIN ONLY — no mlr, no --csv, no file paths
+
+# TABLE — load a sheet into a SQLite table for sql/merge/lookup. Offline. No output sheet.
+- name: "Index Employees"
+  type: "table"
+  inputSheet: "employees"        # required
+  columns:                       # optional; list only fields to rename/type
+    - { source: "First Name", name: "first_name" }   # rename
+    - { source: "Salary", type: "INTEGER" }          # TEXT (default) | INTEGER | REAL | NUMERIC
+
+# SQL — read-only query over table-created tables into a new sheet. Offline.
+- name: "Headcount By Department"
+  type: "sql"
+  inputSheets: ["employees"]     # each must have a `table` action; referenced by sheet name
+  outputSheet: "department-summary"  # required; result columns/rows become the sheet
+  query: 'SELECT "Department", COUNT(*) AS "Headcount" FROM employees GROUP BY "Department"'  # must start with SELECT/WITH
 ```
 
 When `fields` is omitted on insert/update/upsert, every input column is used (insert also
@@ -150,7 +165,13 @@ sends `Id` if present). `transform` and `check` require the shared script file �
 **build-script** skill. `miller` needs no script file: the app runs
 `mlr --csv <command> <input file(s)>` and captures stdout as `outputSheet`, so `command`
 holds only the verb chain (quotes and `then`-chains are fine, e.g.
-`filter '$age > 30' then sort -f Name`).
+`filter '$age > 30' then sort -f Name`). `table` needs no script file and has no output
+sheet — it registers a SQLite table (named after `inputSheet`, real field names as
+columns) that later `sql`/`merge`/`lookup` use; set a numeric `type` so SQL sorts and
+compares numerically. `sql` must be a read-only `SELECT`/`WITH` and can only query sheets
+that a prior `table` action created; quote identifiers with spaces or reserved words. The
+SQLite tables live in `.sfdata-cache/work.sqlite` next to the config and are kept after the
+run for inspection (removed only when **Clean output folder before execution** is set).
 
 ## After writing
 

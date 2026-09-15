@@ -1,0 +1,37 @@
+appConfiguration:
+  processingType: "api"
+  apiVersion: "63.0"
+
+actions:
+  # Turn the employees CSV into a SQLite table so it can be queried with SQL.
+  # Salary is declared INTEGER so numeric comparisons and ordering work correctly;
+  # every other column keeps its original name and defaults to TEXT.
+  - name: "Index Employees"
+    type: "table"
+    inputSheet: "employees"
+    columns:
+      - { source: "Salary", type: "INTEGER" }
+
+  # Query the table by its sheet name using the real column names.
+  - name: "Headcount And Pay By Department"
+    type: "sql"
+    inputSheets: ["employees"]
+    outputSheet: "department-summary"
+    query: >
+      SELECT "Department",
+             COUNT(*) AS "Headcount",
+             SUM("Salary") AS "TotalSalary"
+      FROM employees
+      GROUP BY "Department"
+      ORDER BY "TotalSalary" DESC
+
+  # A second query over the same table: only the higher earners.
+  - name: "High Earners"
+    type: "sql"
+    inputSheets: ["employees"]
+    outputSheet: "high-earners"
+    query: >
+      SELECT "FirstName", "LastName", "Salary"
+      FROM employees
+      WHERE "Salary" >= 85000
+      ORDER BY "Salary" DESC

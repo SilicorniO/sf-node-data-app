@@ -80,3 +80,6 @@ yarn-cache
 
 #Salesforce
 .sf
+
+# SQLite tables created by `table` actions (per-run cache)
+.sfdata-cache

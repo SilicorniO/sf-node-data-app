@@ -7,6 +7,8 @@ import { CheckAction } from '../../src/model/CheckAction';
 import { ExecConf } from '../../src/model/ExecConf';
 import { InsertAction } from '../../src/model/InsertAction';
 import { MergeAction } from '../../src/model/MergeAction';
+import { TableAction } from '../../src/model/TableAction';
+import { SqlAction } from '../../src/model/SqlAction';
 import { TransformAction } from '../../src/model/TransformAction';
 import { UpdateAction } from '../../src/model/UpdateAction';
 import { UpsertAction } from '../../src/model/UpsertAction';
@@ -475,25 +477,37 @@ describe('ActionProcessor merge execution', () => {
     registry.disposeIndexes();
   });
 
-  it('produces identical output when both sides are indexed out-of-core via SQLite', async () => {
+  it('produces identical output when both sides use a created SQLite table', async () => {
     const primaryCsv = path.join(tempDir, 'primary.csv');
     const secondaryCsv = path.join(tempDir, 'secondary.csv');
     fs.writeFileSync(primaryCsv, 'Id,Name,Region\n' + primaryData.map(r => r.join(',')).join('\n') + '\n');
     fs.writeFileSync(secondaryCsv, 'Id,Name,Tier\n' + secondaryData.map(r => r.join(',')).join('\n') + '\n');
 
-    const registry = new SheetRegistry();
+    const cacheDir = fs.mkdtempSync(path.join(tempDir, 'cache-'));
+    const registry = new SheetRegistry({}, cacheDir);
     registry.registerLoader('primary', async () => ({
       name: 'primary', fieldNames: ['Id', 'Name', 'Region'], data: primaryData,
     }));
     registry.registerLoader('secondary', async () => ({
       name: 'secondary', fieldNames: ['Id', 'Name', 'Tier'], data: secondaryData,
     }));
-    // Registering CSV sources routes the merge through the SQLite-backed index.
+    // A CSV source lets the `table` action stream each side straight into SQLite.
     registry.registerCsvSource('primary', primaryCsv);
     registry.registerCsvSource('secondary', secondaryCsv);
 
+    // Explicit `table` actions route the merge through the SQLite-backed index.
+    const config = new ExecConf(
+      new AppConfiguration('api', null, null, '58.0'),
+      [
+        new TableAction('Index primary', 'primary', []),
+        new TableAction('Index secondary', 'secondary', []),
+        new MergeAction('Combine', 'primary', 'secondary', 'merged', 'Id'),
+      ],
+      []
+    );
+
     const merged: { [name: string]: import('../../src/model/DataSheet').DataSheet } = {};
-    await ActionProcessor.processActions(mergeConfig(), registry, {
+    await ActionProcessor.processActions(config, registry, {
       onSheetProduced: (name, sheet) => { merged[name] = sheet; },
     });
 
@@ -510,6 +524,105 @@ describe('ActionProcessor merge execution', () => {
 
     await expect(ActionProcessor.processActions(mergeConfig(), registry))
       .rejects.toBeInstanceOf(PipelineExecutionError);
+    registry.disposeIndexes();
+  });
+});
+
+describe('ActionProcessor table + sql execution', () => {
+  let tempDir = '';
+
+  beforeAll(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfdata-sql-'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function registryWithCache(sheets: { [name: string]: import('../../src/model/DataSheet').DataSheet } = {}) {
+    const cacheDir = fs.mkdtempSync(path.join(tempDir, 'cache-'));
+    return new SheetRegistry(sheets, cacheDir);
+  }
+
+  function config(...actions: import('../../src/model/Action').Action[]): ExecConf {
+    return new ExecConf(new AppConfiguration('api', null, null, '58.0'), actions, []);
+  }
+
+  it('creates a table from a produced/in-memory sheet and queries it with real column names', async () => {
+    const registry = registryWithCache({
+      employees: {
+        name: 'employees',
+        fieldNames: ['Name', 'Department', 'Salary'],
+        data: [
+          ['Alice', 'Engineering', '90000'],
+          ['Bob', 'Sales', '40000'],
+          ['Carol', 'Engineering', '55000'],
+        ],
+      },
+    });
+
+    await ActionProcessor.processActions(
+      config(
+        new TableAction('Index employees', 'employees', [{ source: 'Salary', type: 'INTEGER' }]),
+        new SqlAction(
+          'Top earners',
+          ['employees'],
+          'top',
+          'SELECT "Department", COUNT(*) AS "Count" FROM employees WHERE "Salary" > 50000 GROUP BY "Department" ORDER BY "Department"'
+        )
+      ),
+      registry
+    );
+
+    const top = registry.get('top');
+    expect(top?.fieldNames).toEqual(['Department', 'Count']);
+    expect(top?.data).toEqual([['Engineering', '2']]);
+    registry.disposeIndexes();
+  });
+
+  it('applies column renames in the created table', async () => {
+    const registry = registryWithCache({
+      people: { name: 'people', fieldNames: ['First Name', 'Age'], data: [['Alice', '30']] },
+    });
+
+    await ActionProcessor.processActions(
+      config(
+        new TableAction('Index people', 'people', [{ source: 'First Name', name: 'first_name' }]),
+        new SqlAction('Read', ['people'], 'out', 'SELECT first_name FROM people')
+      ),
+      registry
+    );
+
+    expect(registry.get('out')?.fieldNames).toEqual(['first_name']);
+    expect(registry.get('out')?.data).toEqual([['Alice']]);
+    registry.disposeIndexes();
+  });
+
+  it('errors when a sql action queries a sheet without a table', async () => {
+    const registry = registryWithCache({
+      people: { name: 'people', fieldNames: ['Id'], data: [['1']] },
+    });
+
+    await expect(
+      ActionProcessor.processActions(
+        config(new SqlAction('Read', ['people'], 'out', 'SELECT * FROM people')),
+        registry
+      )
+    ).rejects.toBeInstanceOf(PipelineExecutionError);
+    registry.disposeIndexes();
+  });
+
+  it('fails fast on a rename collision', async () => {
+    const registry = registryWithCache({
+      people: { name: 'people', fieldNames: ['A', 'B'], data: [['1', '2']] },
+    });
+
+    await expect(
+      ActionProcessor.processActions(
+        config(new TableAction('Index people', 'people', [{ source: 'B', name: 'A' }])),
+        registry
+      )
+    ).rejects.toBeInstanceOf(PipelineExecutionError);
     registry.disposeIndexes();
   });
 });

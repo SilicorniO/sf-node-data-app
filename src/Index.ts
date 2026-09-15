@@ -218,7 +218,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  const sheets = new SheetRegistry();
+  // SQLite tables created by `table` actions live in a per-project cache dir next to the
+  // config. It persists after the run so the user can open the database in a SQLite
+  // client, except when the run cleans its output folder — then it starts fresh and is
+  // removed at the end (see disposeIndexes below).
+  const cacheDir = path.join(path.dirname(path.resolve(options.confFile)), '.sfdata-cache');
+  const keepCache = !configuration.appConfiguration.cleanOutputFolderBeforeExecution;
+  const sheets = new SheetRegistry({}, cacheDir, keepCache);
   console.log('\n[3/6] Indexing input files');
   try {
     if (options.inputFolder) {
@@ -323,7 +329,7 @@ async function main(): Promise<void> {
     const selectedActions = actionRange!.end < actionRange!.start
       ? []
       : configuration.actions.slice(actionRange!.start, actionRange!.end + 1);
-    const offlineActionTypes = new Set(['transform', 'check', 'merge', 'miller']);
+    const offlineActionTypes = new Set(['transform', 'check', 'merge', 'miller', 'table', 'sql']);
     const requiresSalesforce = selectedActions.some(action => !offlineActionTypes.has(action.type));
     const authentication = configureSalesforceAuthentication(requiresSalesforce);
     console.log(`      Authentication: ${authentication}.`);
@@ -391,8 +397,12 @@ async function main(): Promise<void> {
     runtimeFailure = runtimeFailure ?? error;
   }
 
-  // Release the temp SQLite workspace and any keyed indexes built for merge/lookup.
-  sheets.disposeIndexes();
+  // Release the SQLite workspace and any keyed indexes built for merge/lookup. When the
+  // cache is kept, tell the user where the database lives so they can connect to it.
+  const databasePath = sheets.disposeIndexes();
+  if (databasePath) {
+    console.log(`      SQLite database kept for inspection: ${databasePath}`);
+  }
 
   if (runtimeFailure) {
     console.error('\nPipeline finished with errors.');

@@ -128,6 +128,52 @@ const millerActionSchema = z.object({
   // expressions such as `filter '$age > 30'`.
 });
 
+const columnTypeSchema = z.enum(['TEXT', 'INTEGER', 'REAL', 'NUMERIC']);
+
+const tableActionSchema = z.object({
+  ...actionCommon,
+  type: z.literal('table'),
+  inputSheet: safeLogicalName,
+  // Optional per-column overrides. `source` is the sheet's field name; `name` renames
+  // it in the table; `type` sets the SQLite storage type. Unlisted fields keep their
+  // name and TEXT.
+  columns: z.array(z.object({
+    source: trimmed,
+    name: trimmed.optional(),
+    type: columnTypeSchema.optional(),
+  }).strict()).default([]),
+}).strict().superRefine((action, context) => {
+  const sources = action.columns.map(column => column.source.toLocaleLowerCase());
+  if (new Set(sources).size !== sources.length) {
+    context.addIssue({ code: 'custom', path: ['columns'], message: 'must not reference the same source column twice' });
+  }
+  // Detect rename collisions among explicitly named columns (case-insensitive). A
+  // collision with an unlisted, retained field name is caught at runtime against the
+  // real header, which the schema cannot see.
+  const targets = action.columns
+    .filter(column => column.name)
+    .map(column => column.name!.toLocaleLowerCase());
+  if (new Set(targets).size !== targets.length) {
+    context.addIssue({ code: 'custom', path: ['columns'], message: 'renamed column names must be unique ignoring case' });
+  }
+});
+
+const sqlActionSchema = z.object({
+  ...actionCommon,
+  type: z.literal('sql'),
+  inputSheets: z.array(safeLogicalName).min(1, 'must reference at least one table sheet').refine(
+    values => new Set(values.map(value => value.toLocaleLowerCase())).size === values.length,
+    'must not contain duplicate sheet names'
+  ),
+  outputSheet: safeLogicalName,
+  query: trimmed,
+}).strict().superRefine((action, context) => {
+  // Only read queries are allowed, so cached tables cannot be mutated or dropped.
+  if (!/^\s*(select|with)\b/i.test(action.query)) {
+    context.addIssue({ code: 'custom', path: ['query'], message: 'query must be a read-only SELECT (or WITH ... SELECT)' });
+  }
+});
+
 export const actionSchema = z.union([
   getActionSchema,
   insertActionSchema,
@@ -138,6 +184,8 @@ export const actionSchema = z.union([
   mergeActionSchema,
   checkActionSchema,
   millerActionSchema,
+  tableActionSchema,
+  sqlActionSchema,
 ]);
 
 const appConfigurationSchema = z.object({

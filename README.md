@@ -12,6 +12,8 @@ entry in `actions` performs exactly one operation:
 - `merge`: join two sheets on a key field, locally (no Salesforce)
 - `check`: run a JavaScript assertion over one or more sheets (no Salesforce)
 - `miller`: transform CSV sheets with [Miller](https://miller.readthedocs.io) (`mlr`), locally (no Salesforce)
+- `table`: load a sheet into a SQLite table (real column names, optional renames/types), locally (no Salesforce)
+- `sql`: run a read-only SQL query over `table`-created tables into a new sheet, locally (no Salesforce)
 
 Actions run sequentially in YAML order. Every output is immediately available as
 an input to later actions.
@@ -525,6 +527,60 @@ Each input sheet is materialized to a temporary CSV and passed to Miller in the 
 listed, so multi-sheet (join) verbs work. Miller either transforms the whole file or
 fails; a non-zero exit surfaces Miller's stderr and writes the action's fatal error
 sheet. Because it is offline, MILLER never triggers Salesforce authentication.
+
+### TABLE
+
+```yaml
+- type: table
+  name: Index Employees
+  inputSheet: employees
+  columns:
+    - { source: "First Name", name: first_name }  # rename
+    - { source: Salary, type: INTEGER }            # typed column
+```
+
+TABLE loads a sheet into a SQLite table so it can be queried with `sql` and joined by
+`merge`/`lookup` without holding the whole sheet in memory (a table streamed from a CSV
+handles files larger than RAM). It produces **no output sheet** — its effect is the
+table.
+
+The table is named after `inputSheet`, and its columns are the sheet's real field
+names. `columns` is optional; list only the fields you want to change. `source` is the
+field name in the sheet, `name` renames it in the table, and `type` sets the SQLite
+storage type (`TEXT` (default), `INTEGER`, `REAL`, or `NUMERIC`). A correct numeric type
+matters so `sql` comparisons and `ORDER BY` sort numerically rather than as text. Fields
+not listed keep their name and default to `TEXT`. A rename that collides with another
+column (ignoring case) or an unknown type is a preflight/validation failure.
+
+Tables are created in a `work.sqlite` database under a `.sfdata-cache/` folder next to
+the config. That database is **kept after the run** so you can open it in any SQLite
+client (the path is printed when the pipeline finishes); the folder is gitignored.
+Re-running a `table` action for a sheet (or producing that sheet again) drops and
+recreates just that table, so existing data is always replaced. The one exception is a
+run with **Clean output folder before execution** enabled: it starts from a fresh
+database and removes the cache when it ends. Because it is offline, TABLE never triggers
+Salesforce authentication.
+
+### SQL
+
+```yaml
+- type: sql
+  name: Headcount By Department
+  inputSheets: [employees]
+  outputSheet: department-summary
+  query: >
+    SELECT "Department", COUNT(*) AS "Headcount"
+    FROM employees
+    GROUP BY "Department"
+```
+
+SQL runs a **read-only** query (must begin with `SELECT` or `WITH`) against tables
+created by earlier `table` actions and stores the result as `outputSheet`. Reference a
+table by its sheet name and its real column names (quote identifiers that contain spaces
+or reserved words). Every sheet in `inputSheets` must already have a `table`; otherwise
+the action fails telling you which. Result columns become the output sheet's fields and
+every value is stored as text (SQL `NULL` becomes an empty string). Because it is
+offline, SQL never triggers Salesforce authentication.
 
 ## Output and failures
 

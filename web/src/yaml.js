@@ -132,12 +132,42 @@ export function buildActionConfiguration(action) {
       result.command = value(action.command);
       break;
     }
+    case 'table': {
+      result.inputSheet = value(action.inputSheet);
+      const columns = cleanColumns(action.columns);
+      if (columns.length) result.columns = columns;
+      break;
+    }
+    case 'sql': {
+      const inputSheets = cleanFields(action.inputSheets);
+      if (inputSheets.length) result.inputSheets = inputSheets;
+      result.outputSheet = value(action.outputSheet);
+      result.query = value(action.query);
+      break;
+    }
   }
   return result;
 }
 
 function cleanFields(fields = []) {
   return fields.map(field => String(field).trim()).filter(Boolean);
+}
+
+// Keeps only column overrides that name a source, emitting `name`/`type` only when set so
+// a bare "keep original name, default TEXT" row is left out of the YAML entirely.
+function cleanColumns(columns = []) {
+  return columns
+    .map(column => {
+      const source = value(column.source);
+      if (!source) return null;
+      const entry = { source };
+      const name = value(column.name);
+      const type = value(column.type);
+      if (name) entry.name = name;
+      if (type) entry.type = type;
+      return entry;
+    })
+    .filter(Boolean);
 }
 
 function addFields(result, fields) {

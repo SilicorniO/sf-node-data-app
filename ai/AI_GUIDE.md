@@ -8,7 +8,7 @@ CSV/Excel inputs and Salesforce, driven by **one YAML config file**. Sheets flow
 actions in memory; produced sheets are written as CSV to the output folder.
 
 > Source of truth: the Zod schema `src/schema/ExecConfSchema.ts` and the runnable
-> `examples/01..08/`. **Ignore `input/*.yaml`** — that is a deprecated, rejected format.
+> `examples/01..10/`. **Ignore `input/*.yaml`** — that is a deprecated, rejected format.
 
 > Task-focused skills that build on this guide live in `ai/skills/` — `build-config`
 > (author a `conf.yaml`) and `build-script` (author the shared `scripts.js`). They are not
@@ -66,7 +66,7 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
 | Field | Default | Meaning |
 |---|---|---|
 | `name` | (required) | Unique logical name. No `/ \ ..` or control chars. |
-| `type` | (required) | `get`/`insert`/`update`/`upsert`/`delete`/`transform`/`merge`/`check`/`miller` |
+| `type` | (required) | `get`/`insert`/`update`/`upsert`/`delete`/`transform`/`merge`/`check`/`miller`/`table`/`sql` |
 | `waitBeforeSeconds` | `0` | Delay before running this action |
 | `continueOnError` | `false` | If `true`, row errors don't halt the pipeline |
 | `errorSheet` | `<name>-errors` | Sheet/CSV for failed rows (adds `_ErrorMessage`) |
@@ -136,6 +136,21 @@ unique (case-insensitive). An action's `errorSheet` must differ from its own in/
   inputSheets: ["employees"]            # one or more; passed to mlr in order (multi = join verbs)
   outputSheet: "employees-sorted"       # required; captures mlr's stdout
   command: "sort -nr Salary"            # required; the verb chain ONLY
+
+# TABLE — load a sheet into a SQLite table (local, no Salesforce; no output sheet)
+- name: "Index Employees"
+  type: "table"
+  inputSheet: "employees"               # required; the table is named after this sheet
+  columns:                              # optional; list ONLY fields to rename or type
+    - { source: "First Name", name: "first_name" }   # rename; keep default TEXT
+    - { source: "Salary", type: "INTEGER" }          # TEXT (default) | INTEGER | REAL | NUMERIC
+
+# SQL — run a read-only query over table-created tables into a new sheet (local, no Salesforce)
+- name: "Headcount By Department"
+  type: "sql"
+  inputSheets: ["employees"]            # each MUST have an earlier `table` action; referenced by sheet name
+  outputSheet: "department-summary"     # required; result columns/rows become the sheet
+  query: 'SELECT "Department", COUNT(*) AS "Headcount" FROM employees GROUP BY "Department"'  # must start with SELECT/WITH
 ```
 
 `check` runs a JS function (from `--scriptFile`) that returns a boolean. See §2 for its
@@ -147,6 +162,24 @@ runs `mlr --csv <command> <input file(s)>` and captures stdout as `outputSheet`,
 respected) and passed to `mlr` as an argv array — never through a shell, so DSL expressions like
 `filter '$age > 30'` and chained verbs (`... then cut -f Name`) are safe. `mlr` must be installed
 and on `PATH`, or the run fails at preflight.
+
+`table` and `sql` are the SQLite pair. A `table` action loads its `inputSheet` into a SQLite
+table (named after the sheet, real field names as columns) as a **side effect** — it has no
+output sheet and produces no CSV. By default every column is imported as `TEXT` under its own
+name; list a column under `columns` only to rename it (`name`) or give it a SQL type (`type`:
+`TEXT`/`INTEGER`/`REAL`/`NUMERIC`) so numeric sorts and comparisons behave. Rename collisions
+(exact or case-insensitive) and unknown types fail at config parse. Once a sheet has a table,
+any later `merge`/lookup on that sheet transparently uses SQLite instead of loading the whole
+sheet into memory — this is how large files stay out-of-core (without a `table` action, `merge`
+runs in memory). A `sql` action then runs a **read-only** query (must start with `SELECT` or
+`WITH`; anything else is rejected at parse) over one or more table-created sheets, referenced by
+sheet name with real, optionally-quoted column names (`"First Name"`), and writes the result
+columns/rows to its `outputSheet`. Every listed `inputSheets` entry must have an earlier `table`
+action or the run fails with a message naming the missing table. Both actions are offline (no
+Salesforce auth); the shared SQLite database lives in a `work.sqlite` file under a `.sfdata-cache/`
+folder next to the config. It is kept after the run for inspection (the path is printed at the end),
+except when **Clean output folder before execution** is enabled — then it starts fresh and is removed
+at the end. Re-creating a table drops and recreates it, so its data is always replaced.
 
 ---
 
@@ -278,7 +311,7 @@ npx ts-node src/Index.ts --confFile <conf.yaml> --scriptFile <scripts.js> \
 ```
 
 Phases: load+validate YAML → prepare output folder → index inputs → field mappings + SF auth
-(only if a Salesforce action is in range; `transform`, `check`, `merge`, and `miller` are offline) →
+(only if a Salesforce action is in range; `transform`, `check`, `merge`, `miller`, `table`, and `sql` are offline) →
 run selected actions in order (streaming output) → flush remaining sheets. Exit code 1 on
 failure; accepted row-errors still exit 0.
 
@@ -320,13 +353,13 @@ Use `--fromTask`/`--toTask` to run a sub-range of the pipeline (e.g. re-run only
 ## 6. Salesforce authentication (env vars / `.env`)
 
 Precedence: **bearer token → client credentials → Salesforce CLI**.
-Auth is only performed when the run includes a non-`transform`/`check`/`merge`/`miller` action.
+Auth is only performed when the run includes a non-`transform`/`check`/`merge`/`miller`/`table`/`sql` action.
 
 - **Bearer:** `SF_ACCESS_TOKEN` + `SF_INSTANCE_URL` (both required).
 - **Client credentials:** `SF_CLIENT_ID` + `SF_CLIENT_SECRET` + `SF_INSTANCE_URL` (all three).
 - **SF CLI fallback:** none set → uses the active org via the `sf` CLI.
 
-Pure `transform`/`check`/`merge`/`miller`-only pipelines need no Salesforce credentials.
+Pure `transform`/`check`/`merge`/`miller`/`table`/`sql`-only pipelines need no Salesforce credentials.
 (`miller` additionally requires the `mlr` binary on `PATH`.)
 
 ---
@@ -374,6 +407,7 @@ node dist/Index.js -c myjob/conf.yaml -s myjob/scripts.js -v myjob/contacts.csv 
 - [ ] `fields` rules honored: insert excludes `Id`; update includes `Id`; upsert includes `externalIdField`.
 - [ ] If any transform or check exists, `--scriptFile` is passed and the shared file exports a function keyed by each transform/check action's `name`.
 - [ ] If any `miller` action exists, `mlr` is installed on `PATH` and each `command` is a verb chain only (no `mlr`, `--csv`, or file paths).
+- [ ] Every `sql` action's `inputSheets` each have an earlier `table` action; the `query` starts with `SELECT`/`WITH` and quotes identifiers with spaces or reserved words.
 - [ ] Inputs supplied via `-v`/`-e`/`-i`; sheet names don't collide.
 - [ ] SF auth env vars set if any get/insert/update/upsert/delete action runs.
 - [ ] `--outputFolder` set (not a protected path if cleaning is enabled).

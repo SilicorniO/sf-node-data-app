@@ -176,6 +176,42 @@ class SfActionModal extends HTMLElement {
         </div>
       </div>`;
     }
+    if (action.type === 'sql') {
+      return `<div class="form-grid two">
+        <div class="field wide">
+          <span class="field-title-row">Input sheets</span>
+          <div class="chips">
+            ${(action.inputSheets || []).map((sheet, index) => `
+              <span class="chip">
+                ${esc(sheet)}
+                <button type="button" data-remove-input="${index}" aria-label="Remove ${esc(sheet)}">×</button>
+              </span>`).join('')}
+            <input id="new-input-sheet" type="text" list="sheet-suggestions" placeholder="Add a sheet, then Enter">
+          </div>
+          <small class="hint">Each sheet must have a <code>table</code> action earlier in the pipeline. Reference it by sheet name in the query.</small>
+        </div>
+        ${this.field('outputSheet', 'Output sheet', action.outputSheet, { required: true, list: true, placeholder: 'department-summary' })}
+        ${this.field('query', 'SQL query', action.query, { required: true, textarea: true, wide: true, placeholder: 'SELECT "Department", COUNT(*) FROM employees GROUP BY "Department"' })}
+        <div class="field wide">
+          <small class="hint">Read-only <code>SELECT</code>/<code>WITH</code> only. Quote identifiers with spaces or reserved words, e.g. <code>"First Name"</code>.</small>
+        </div>
+      </div>`;
+    }
+    if (action.type === 'table') {
+      return `<div class="form-grid two">
+        ${this.field('inputSheet', 'Input sheet', action.inputSheet, { required: true, list: true, placeholder: 'employees' })}
+        <div class="field wide">
+          <span class="field-title-row">
+            Column overrides
+            <span class="field-title-actions">
+              <button type="button" class="text-button" data-add-column>Add column</button>
+            </span>
+          </span>
+          ${this.columnRows(action)}
+          <small class="hint">Optional. List only the fields you want to rename or type. Unlisted columns keep their name and default to TEXT. Leave <em>Rename</em> blank to keep the field name.</small>
+        </div>
+      </div>`;
+    }
     const fields = action.type === 'delete' ? '' : this.fieldsEditor(action);
     const output = action.type === 'insert'
       ? this.field('outputSheet', 'ID output sheet', action.outputSheet, { list: true, placeholder: 'Optional: Inserted IDs' })
@@ -220,6 +256,40 @@ class SfActionModal extends HTMLElement {
             ? 'The external ID is required and locked in an explicit field list.'
             : 'Id is not allowed for INSERT.'
         : 'All input sheet fields will be used.'}</small>
+    </div>`;
+  }
+
+  columnRows(action) {
+    const columns = action.columns || [];
+    const knownFields = this.fieldsForSelectedSheet();
+    const types = ['TEXT', 'INTEGER', 'REAL', 'NUMERIC'];
+    if (!columns.length) {
+      return '<p class="hint">No overrides — every field is imported as TEXT under its own name.</p>';
+    }
+    return `<div class="column-overrides">
+      ${columns.map((column, index) => `
+        <div class="form-grid three column-row">
+          <label class="field">
+            <span>Source field</span>
+            <input data-column="${index}" data-column-field="source" list="column-sources" value="${esc(column.source || '')}" placeholder="Field in the sheet">
+          </label>
+          <label class="field">
+            <span>Rename to</span>
+            <input data-column="${index}" data-column-field="name" value="${esc(column.name || '')}" placeholder="Keep field name">
+          </label>
+          <label class="field">
+            <span>Type</span>
+            <span class="column-type-row">
+              <select data-column="${index}" data-column-field="type">
+                ${['', ...types].map(type => `<option value="${type}" ${(column.type || '') === type ? 'selected' : ''}>${type || 'TEXT (default)'}</option>`).join('')}
+              </select>
+              <button type="button" class="icon-button" data-remove-column="${index}" aria-label="Remove column">×</button>
+            </span>
+          </label>
+        </div>`).join('')}
+      <datalist id="column-sources">
+        ${knownFields.map(field => `<option value="${esc(field)}"></option>`).join('')}
+      </datalist>
     </div>`;
   }
 
@@ -283,6 +353,11 @@ class SfActionModal extends HTMLElement {
     });
     this.querySelector('[data-field="inputSheet"]')?.addEventListener('change', () => {
       this.sync();
+      if (this.draft.type === 'table') {
+        // Refresh the column-source datalist for the newly selected sheet.
+        this.render();
+        return;
+      }
       if (!['insert', 'update', 'upsert'].includes(this.draft.type)) return;
       const knownFields = this.fieldsForSelectedSheet();
       const identifier = this.draft.type === 'update'
@@ -336,6 +411,17 @@ class SfActionModal extends HTMLElement {
       this.commitPendingField();
       this.render();
     });
+    this.querySelector('[data-add-column]')?.addEventListener('click', () => {
+      this.sync();
+      this.draft.columns ||= [];
+      this.draft.columns.push({ source: '', name: '', type: '' });
+      this.render();
+    });
+    this.querySelectorAll('[data-remove-column]').forEach(button => button.addEventListener('click', () => {
+      this.sync();
+      this.draft.columns.splice(Number(button.dataset.removeColumn), 1);
+      this.render();
+    }));
     this.querySelector('#new-action-field')?.addEventListener('paste', event => {
       const text = event.clipboardData?.getData('text') || '';
       if (!text.trim()) return;
@@ -492,6 +578,12 @@ module.exports = function transform(row, { lookup, lookupAll }) {
         : input.type === 'number'
           ? Number(input.value || 0)
           : input.value;
+    });
+    this.querySelectorAll('[data-column]').forEach(input => {
+      const index = Number(input.dataset.column);
+      const field = input.dataset.columnField;
+      const column = this.draft.columns?.[index];
+      if (column) column[field] = input.value;
     });
   }
 }

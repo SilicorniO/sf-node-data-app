@@ -19,8 +19,12 @@ export interface SheetIndex {
   /** Every row of the sheet in file order (used to stream the primary side of a merge). */
   allRows(): Iterable<string[]>;
 
-  /** Releases any resources (e.g. drops the backing SQLite table). */
-  dispose(): void;
+  /**
+   * Releases any resources. By default a SQLite-backed index drops its table; pass
+   * `{ keepTable: true }` to close/forget the index but leave the table in the DB so a
+   * persisted `work.sqlite` still contains it for later inspection.
+   */
+  dispose(options?: { keepTable?: boolean }): void;
 }
 
 /**
@@ -54,7 +58,7 @@ export class InMemorySheetIndex implements SheetIndex {
     return this.rows;
   }
 
-  dispose(): void {
+  dispose(_options?: { keepTable?: boolean }): void {
     this.indexes.clear();
   }
 
